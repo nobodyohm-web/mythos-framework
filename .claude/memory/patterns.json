@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "lastEvolution": null,
+  "sessionsCompleted": 1,
+  "totalTasks": 0,
+  "averageConfidence": null,
+  "confidenceTrend": "new",
+  "rulesAdded": 0,
+  "skillsCreated": 3,
+  "topMistakes": [],
+  "topStrengths": [],
+  "evolutionHistory": [],
+  "calibration": {
+    "overconfidentCount": 0,
+    "underconfidentCount": 0,
+    "calibratedCount": 0,
+    "note": "Filled in by /reflect after comparing predicted vs actual outcomes"
+  }
+}

@@ -1,0 +1,26 @@
+# Environment & Secrets
+.env
+.env.*
+*.local.md
+
+# Claude Code internals
+.claude/memory.db
+.claude/settings.local.json
+
+# Node
+node_modules/
+bun.lock
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+*.db
+
+# Logs
+*.log
+logs/
