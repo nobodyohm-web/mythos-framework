@@ -6,18 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[MYTHOS] Pre-Bash — validating command safety'",
-            "timeout": 3000
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo '[MYTHOS] Pre-Edit — read before write protocol active'",
-            "timeout": 3000
+            "command": "echo '[MYTHOS] ✅'",
+            "timeout": 1000
           }
         ]
       }
@@ -28,19 +18,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PostTrade.sh\" 2>/dev/null || echo \"[MYTHOS] PostEdit validation skipped (no applicable checks)\"'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PostTrade.sh\" 2>/dev/null || true'",
             "timeout": 15000
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh -c 'echo \"[MYTHOS] Routing: $(date +%H:%M:%S) — Checking lessons and patterns\" && LESSONS=$(grep -c \"^### \" \"${CLAUDE_PROJECT_DIR:-.}/tasks/lessons.md\" 2>/dev/null || echo 0) && echo \"[MYTHOS] $LESSONS lessons in memory\"'",
-            "timeout": 5000
           }
         ]
       }
@@ -50,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PreMarket.sh\" 2>/dev/null || echo \"[MYTHOS] PreMarket hook not available\"'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PreMarket.sh\" 2>/dev/null || true'",
             "timeout": 15000
           }
         ]
@@ -61,13 +40,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null || echo \"[MYTHOS] Auto-learn hook not available\"'",
-            "timeout": 10000
-          },
-          {
-            "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/EndOfDay.sh\" 2>/dev/null || echo \"[MYTHOS] EndOfDay hook not available\"'",
-            "timeout": 15000
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null && bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/EndOfDay.sh\" 2>/dev/null || true'",
+            "timeout": 20000
           }
         ]
       }
@@ -77,8 +51,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/verify-completion.sh\" 2>/dev/null || echo \"[MYTHOS] Completion verification skipped\"'",
-            "timeout": 15000
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/verify-completion.sh\" 2>/dev/null || true'",
+            "timeout": 10000
           }
         ]
       }
@@ -92,7 +66,24 @@
       "Edit(*)",
       "MultiEdit(*)",
       "WebFetch(*)",
-      "mcp__*"
+      "mcp__*",
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(bun *)",
+      "Bash(curl *)",
+      "Bash(chmod *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(cat *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(sed *)",
+      "Bash(awk *)",
+      "Bash(python*)",
+      "Bash(node *)",
+      "Bash(cargo *)"
     ],
     "deny": [
       "Read(./.env)",
@@ -101,6 +92,7 @@
   },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "MYTHOS_MODE": "enabled"
+    "MYTHOS_MODE": "enabled",
+    "MYTHOS_AUTO_APPROVE": "true"
   }
 }
