@@ -1,24 +1,27 @@
 {
-  "version": "3.2.0",
-  "lastEvolution": "2026-05-10T16:30:00+02:00",
-  "sessionsCompleted": 5,
+  "version": "4.0.0",
+  "lastEvolution": "2026-05-10T19:30:00+02:00",
+  "sessionsCompleted": 6,
   "totalTasks": 0,
   "averageConfidence": null,
   "confidenceTrend": "improving",
   "rulesAdded": 5,
-  "skillsCreated": 8,
-  "subagentsCreated": 7,
-  "hooksCreated": 15,
-  "commandsCreated": 12,
+  "skillsCreated": 11,
+  "subagentsCreated": 12,
+  "hooksCreated": 17,
+  "commandsCreated": 14,
+  "mcpServersConfigured": 4,
   "topMistakes": [],
   "topStrengths": [
-    "Layered L1-L5 architecture",
-    "Self-improvement loop with lessons.md",
-    "Confidence scoring discipline",
-    "Dedicated /heal /evolve /reflect workflows",
+    "Layered L1-L6 architecture with MCP integration",
+    "Self-improvement loop with lessons.md + benchmark + self-eval metrics",
+    "Confidence scoring discipline + calibration with band-shift recommendations",
+    "Dedicated /heal /evolve /reflect /team /benchmark workflows",
     "Canonical .claude/agents/ subagent layout (auto-discovery via Task tool)",
-    "Structured JSONL event observability",
-    "Smart-router emits official hookSpecificOutput JSON"
+    "Structured JSONL event observability (events.jsonl + eval-metrics.jsonl + exec-metrics.jsonl)",
+    "Smart-router emits official hookSpecificOutput JSON; routes v4 capabilities",
+    "MCP servers configured: filesystem, memory, sequential-thinking, fetch",
+    "5-role agent pipeline: planner → researcher → implementer → reviewer → tester"
   ],
   "evolutionHistory": [
     {
@@ -53,12 +56,35 @@
         "https://o-mega.ai/articles/self-improving-ai-agents-the-2026-guide",
         "https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills"
       ]
+    },
+    {
+      "timestamp": "2026-05-10T19:30:00+02:00",
+      "version": "4.0",
+      "summary": "MCP + multi-agent teams + auto-evaluation loop. Added mcpServers (filesystem, memory, sequential-thinking, fetch) configured in settings.json. Added 5 specialized v4 agents (planner, researcher, implementer, reviewer, tester) for the parallel-execution pipeline. Added 3 v4 skills (mcp-orchestrator, parallel-execution, self-improve). Added 2 hooks (self-eval scoring metrics on SessionEnd, execution-monitor tracking command duration). Added 2 commands (/team for orchestrated multi-agent work, /benchmark for verifiable evaluation). Upgraded /calibrate to recommend band shifts. Smart-router now routes team/parallel/benchmark/mcp/research keywords. test-mythos.sh: 159/159 checks (added 52 v4 tests). CLAUDE.md grew to 177 lines with new L5 (MCP) section, still under 200 budget. MYTHOS_VERSION=4.0.",
+      "filesCreated": 12,
+      "filesModified": 6,
+      "researchSources": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/agent-teams",
+        "https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-claude.md",
+        "https://nimbalyst.com/blog/claude-code-mcp-setup/",
+        "https://thepromptshelf.dev/blog/claude-code-mcp-setup-guide/",
+        "https://www.data-mania.com/blog/best-mcp-servers-for-claude-code-building-systems-not-stacks/",
+        "https://shipyard.build/blog/claude-code-multi-agent/",
+        "https://addyosmani.com/blog/code-agent-orchestra/",
+        "https://gist.github.com/AnthonyAlcaraz/a0b70a4bb5ce521129e93bf9d33f9698",
+        "https://www.marktechpost.com/2026/04/26/top-7-benchmarks-that-actually-matter-for-agentic-reasoning-in-large-language-models/",
+        "https://benchlm.ai/agentic",
+        "https://www.vals.ai/benchmarks/swebench"
+      ]
     }
   ],
   "calibration": {
     "overconfidentCount": 0,
     "underconfidentCount": 0,
     "calibratedCount": 0,
-    "note": "Filled in by /calibrate after comparing predicted vs actual outcomes"
+    "history": [],
+    "lastAdjustment": null,
+    "note": "Filled in by /calibrate after comparing predicted vs actual outcomes. v4: history array tracks per-session deltas; lastAdjustment records tighten/loosen/hold."
   }
 }

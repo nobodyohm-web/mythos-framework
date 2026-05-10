@@ -77,3 +77,8 @@ Each lesson follows this structure:
 **Root Cause:** Treated /compact as "free" cleanup; ignored that it discards working memory.
 **Rule:** PreCompact hook persists a small markdown snapshot (`precompact-snapshot.md`) that the post-compact session can read in one Read call. Cheap insurance.
 
+### 2026-05-10 — `grep -c … || echo 0` is a footgun
+**Mistake:** First v4 self-eval hook used `VAR="$(grep -c PATTERN file 2>/dev/null || echo 0)"` to count matches. When grep matches zero lines, it prints `0` AND exits 1 — so the `||` branch *also* runs `echo 0`. The variable then captures `0\n0`, which broke `jq --argjson` ("invalid JSON text"), causing the hook to write nothing to `eval-metrics.jsonl` (caught by the new `self-eval row is valid JSON` test).
+**Root Cause:** Conflated "exit 1" with "no output". `grep -c` always outputs the count regardless of exit code; `wc -l` and similar counters do too.
+**Rule:** When you need a single integer from a counting command, sanitize it: `_count(){ printf '%s' "$1" | tr -dc '0-9'; }; VAR="$(_count "$(grep -c X f 2>/dev/null)")"`. Never `|| echo 0` after a command that already prints a number — you'll get `0\n0`. The behavioral test (`jq` fails on the malformed payload) is what caught this; keep adding "row is valid JSON" tests for every metric writer.
+

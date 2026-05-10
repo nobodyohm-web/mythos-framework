@@ -1,4 +1,27 @@
 {
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/alex/Desktop/Claude code Agentic autonomy",
+        "/Users/alex/Desktop/mythos"
+      ]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"]
+    }
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -60,7 +83,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/error-recovery.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" PostToolUse < /dev/null 2>/dev/null || true'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/error-recovery.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/execution-monitor.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" PostToolUse < /dev/null 2>/dev/null || true'",
             "timeout": 5000
           }
         ]
@@ -115,8 +138,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" save 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/EndOfDay.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" SessionEnd < /dev/null 2>/dev/null || true'",
-            "timeout": 25000
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" save 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/self-eval.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/EndOfDay.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" SessionEnd < /dev/null 2>/dev/null || true'",
+            "timeout": 30000
           }
         ]
       }
@@ -152,6 +175,6 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "MYTHOS_MODE": "enabled",
     "MYTHOS_AUTO_APPROVE": "true",
-    "MYTHOS_VERSION": "3.2"
+    "MYTHOS_VERSION": "4.0"
   }
 }

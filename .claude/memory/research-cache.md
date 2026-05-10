@@ -161,3 +161,57 @@ Skip planning for sub-5-minute changes (typos, single-line fixes).
 - No PreToolUse guard against secret writes.
 - No smart-routing or context-guardian hooks.
 - No self-test harness.
+
+---
+
+## v4 Research — MCP + multi-agent teams + auto-eval (2026-05-10)
+
+### MCP integration
+- **Config location**: project `.claude/settings.json` → `mcpServers` (overrides user `~/.claude/settings.json`).
+- **Server config shape**: `{"command":"npx","args":["-y","@modelcontextprotocol/server-X", "<arg>"]}` for stdio servers.
+- **Filesystem MCP**: `@modelcontextprotocol/server-filesystem <abs-path>...` — accepts multiple absolute paths; `~` does NOT expand.
+- **Sweet spot**: 3-5 focused servers. Connecting 20+ servers increases startup time and obscures Claude's tool surface.
+- **Credentials**: use `${ENV_VAR}` syntax in args; never hardcode tokens. Scoped tokens, minimum permissions.
+- **Verify status**: `/mcp` slash command shows live connectivity.
+- **Tool prefix**: tools appear in Claude as `mcp__<server>__<tool>`.
+
+### Agent Teams (experimental)
+- **Enable**: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in settings.json `env` block.
+- **Requires**: Claude Code v2.1.32+.
+- **Architecture**: lead session coordinates; teammates run in own context windows; shared task list with file locking; mailbox for inter-teammate messaging.
+- **Storage**: `~/.claude/teams/{team-name}/config.json` and `~/.claude/tasks/{team-name}/`.
+- **Display modes**: `in-process` (Shift+Down to cycle) OR `tmux`/iTerm2 split panes.
+- **Subagent reuse**: any subagent in `.claude/agents/` can be referenced by name as a teammate type.
+- **Token cost**: scales linearly per teammate. Default to 3-5; 5-6 tasks per teammate.
+- **Best uses**: research/review with multiple lenses, new modules with disjoint files, debugging with competing hypotheses, cross-layer (FE+BE+tests) coordination.
+- **Anti-pattern**: agent teams when subagents would do (5× tokens for the same answer).
+
+### Subagents vs Agent Teams
+| | Subagents | Agent Teams |
+|---|---|---|
+| Context | Own window; result returns to caller | Own window; fully independent |
+| Communication | Result-only back to main | Direct inter-teammate messaging |
+| Coordination | Main agent manages | Shared task list, self-claim |
+| Best for | Focused fan-out | Sustained collaboration |
+| Token cost | Lower | Higher |
+
+### Self-Improvement Loop (2026 SOTA)
+- **Core insight**: AI self-improvement only works in domains with **verifiable outcomes** (tests passing, gold-patch match, hook exit codes). Subjective metrics get reward-hacked (UC Berkeley April 2026).
+- **SICA result**: self-improving coding agent climbed 17% → 53% on SWE-Bench Verified by editing its own codebase.
+- **Loop**: run benchmark → extract failure patterns → write lesson (judgment) or hook (deterministic) → re-run → measure delta. Three consecutive no-improvement iterations → escalate.
+- **Mythos signal sources**: `hooks/test-mythos.sh` (infra), `/benchmark --mode=swe-mini` (coding), `/calibrate` (confidence).
+- **Failure pattern taxonomy**: missed-file, wrong-fix, regressed-test, incomplete, over-engineered.
+
+### New v4 hook events
+- `TeammateIdle` — runs when teammate about to go idle; exit 2 to keep working.
+- `TaskCreated` — runs when shared task created; exit 2 to prevent + feedback.
+- `TaskCompleted` — runs when task marked complete; exit 2 to keep open + feedback.
+- These are Agent-Teams-specific. Wire on demand when team coordination becomes load-bearing.
+
+### Sources
+- https://code.claude.com/docs/en/mcp
+- https://code.claude.com/docs/en/agent-teams
+- https://nimbalyst.com/blog/claude-code-mcp-setup/
+- https://benchlm.ai/agentic
+- https://www.vals.ai/benchmarks/swebench
+- https://gist.github.com/AnthonyAlcaraz/a0b70a4bb5ce521129e93bf9d33f9698 (verifiable-outcomes principle)

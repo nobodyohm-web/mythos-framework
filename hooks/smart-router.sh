@@ -33,15 +33,27 @@ case "$LC" in
   *"design"*|*"architect"*|*"adr"*|*"refactor architecture"*|*"system design"*)
     ROUTE="DESIGN"; SKILL="skills/architect.md"; AGENT="architect" ;;
   *"review"*|*"audit code"*|*"pr feedback"*)
-    ROUTE="REVIEW"; SKILL="skills/code-review.md" ;;
+    ROUTE="REVIEW"; SKILL="skills/code-review.md"; AGENT="reviewer" ;;
   *"test"*|*"tdd"*|*"add test"*|*"write tests"*)
-    ROUTE="TDD"; SKILL="skills/tdd.md" ;;
+    ROUTE="TDD"; SKILL="skills/tdd.md"; AGENT="tester" ;;
   *"refactor"*|*"clean up"*|*"restructure"*|*"extract"*)
     ROUTE="REFACTOR"; SKILL="skills/refactor.md" ;;
   *"slow"*|*"performance"*|*"latency"*|*"optimize"*|*"too slow"*|*"memory"*)
     ROUTE="PERFORMANCE"; SKILL="subagents/optimizer.md"; AGENT="optimizer" ;;
   *"security"*|*"vulnerab"*|*"owasp"*|*"cve"*|*"injection"*|*"xss"*|*"csrf"*)
     ROUTE="SECURITY"; SKILL="subagents/security-auditor.md"; AGENT="security-auditor" ;;
+  *"plan"*|*"decompose"*|*"break down"*|*"split this"*|*"split the work"*)
+    ROUTE="PLAN"; SKILL="skills/parallel-execution.md"; AGENT="planner" ;;
+  *"team"*|*"parallel"*|*"in parallel"*|*"multi-agent"*|*"fan out"*|*"fan-out"*)
+    ROUTE="TEAM"; SKILL="skills/parallel-execution.md" ;;
+  *"benchmark"*|*"swe-bench"*|*"eval"*|*"evaluate"*|*"score"*|*"baseline"*)
+    ROUTE="BENCHMARK"; SKILL="skills/self-improve.md" ;;
+  *"self-improve"*|*"improve mythos"*|*"compounding"*|*"calibrate"*)
+    ROUTE="SELF_IMPROVE"; SKILL="skills/self-improve.md" ;;
+  *"mcp"*|*"filesystem server"*|*"memory server"*|*"sequential thinking"*|*"sequential-thinking"*)
+    ROUTE="MCP"; SKILL="skills/mcp-orchestrator.md" ;;
+  *"research"*|*"sota"*|*"state of the art"*|*"deep dive on"*|*"compare libraries"*)
+    ROUTE="RESEARCH"; AGENT="researcher" ;;
   *"breakout"*|*"momentum"*|*"new high"*|*"volume surge"*)
     ROUTE="TRADE_BREAKOUT"; SKILL="skills/breakout.md" ;;
   *"pullback"*|*"dip"*|*"support bounce"*)
@@ -49,6 +61,12 @@ case "$LC" in
   *"reversion"*|*"oversold"*|*"overbought"*|*"fade"*|*"rsi divergence"*)
     ROUTE="TRADE_MEAN_REV"; SKILL="skills/mean-reversion.md" ;;
 esac
+
+# Multi-file change hint: if prompt mentions ≥3 files explicitly, suggest /team.
+FILE_HITS=$(echo "$PROMPT" | grep -oE '[a-zA-Z0-9_./-]+\.(ts|tsx|js|jsx|py|rs|sh|md|json)' | sort -u | wc -l | tr -d ' ')
+if [ "${FILE_HITS:-0}" -ge 3 ] && [ -z "$ROUTE" ]; then
+  ROUTE="MULTI_FILE"; SKILL="skills/parallel-execution.md"
+fi
 
 # Compose the additional context text
 TEXT=""

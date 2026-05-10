@@ -45,7 +45,8 @@ section "Hooks"
 HOOKS=(_lib.sh PreMarket.sh PostTrade.sh EndOfDay.sh \
        smart-router.sh git-guardian.sh context-guardian.sh error-recovery.sh \
        session-state.sh observability.sh precompact-snapshot.sh subagent-tracker.sh \
-       notification-handler.sh verify-completion.sh auto-learn.sh test-mythos.sh)
+       notification-handler.sh verify-completion.sh auto-learn.sh test-mythos.sh \
+       self-eval.sh execution-monitor.sh)
 for h in "${HOOKS[@]}"; do
   [ -f "$P/hooks/$h" ]; check "file:  hooks/$h" $?
 done
@@ -63,11 +64,28 @@ check "patterns.json parses"               $?
 # settings.json must wire every hook the lifecycle declares.
 for h in smart-router git-guardian context-guardian error-recovery \
          session-state observability precompact-snapshot subagent-tracker \
-         notification-handler verify-completion auto-learn PreMarket PostTrade EndOfDay
+         notification-handler verify-completion auto-learn PreMarket PostTrade EndOfDay \
+         self-eval execution-monitor
 do
   grep -q "$h.sh" "$P/.claude/settings.json"
   check "settings.json wires $h.sh" $?
 done
+
+# v4: settings.json must declare mcpServers with at least filesystem + memory.
+python3 -c "
+import json,sys
+d = json.load(open('$P/.claude/settings.json'))
+m = d.get('mcpServers', {})
+sys.exit(0 if ('filesystem' in m and 'memory' in m) else 1)
+" 2>/dev/null
+check "settings.json declares filesystem + memory MCP servers" $?
+
+python3 -c "
+import json,sys
+d = json.load(open('$P/.claude/settings.json'))
+sys.exit(0 if d.get('env',{}).get('MYTHOS_VERSION','').startswith('4') else 1)
+" 2>/dev/null
+check "MYTHOS_VERSION is 4.x"               $?
 
 # ─── 4. CLAUDE.md size budget ─────────────────────────────────────────────────
 section "CLAUDE.md budget"
@@ -89,8 +107,27 @@ done
 
 # ─── 6. Skills: present ───────────────────────────────────────────────────────
 section "Skills"
-for s in debug-detective architect code-review tdd refactor; do
+for s in debug-detective architect code-review tdd refactor \
+         mcp-orchestrator parallel-execution self-improve; do
   [ -f "$P/skills/$s.md" ]; check "skill:  skills/$s.md" $?
+done
+
+# ─── 6b. v4 agents (planner/researcher/implementer/reviewer/tester) ───────────
+section "v4 Agents"
+for a in planner researcher implementer reviewer tester; do
+  [ -f "$P/.claude/agents/$a.md" ]; check "agent:  .claude/agents/$a.md" $?
+  if [ -f "$P/.claude/agents/$a.md" ]; then
+    grep -q "^name: $a" "$P/.claude/agents/$a.md"
+    check "agent name matches: $a"           $?
+    grep -q '^tools:' "$P/.claude/agents/$a.md"
+    check "agent declares tools: $a"         $?
+  fi
+done
+
+# ─── 6c. v4 commands ──────────────────────────────────────────────────────────
+section "v4 Commands"
+for c in team benchmark calibrate; do
+  [ -f "$P/.claude/commands/$c.md" ]; check "command: /$c" $?
 done
 
 # ─── 7. Behavior tests on hooks ───────────────────────────────────────────────
@@ -155,6 +192,24 @@ out="$(echo '{"prompt":"design the API schema for the new service"}' \
 echo "$out" | grep -q 'architect'
 check "routes 'design' → architect" $?
 
+# v4: route 'team' / 'parallel' → parallel-execution
+out="$(echo '{"prompt":"split this work in parallel across multiple agents"}' \
+  | bash "$P/hooks/smart-router.sh" 2>/dev/null)"
+echo "$out" | grep -q 'parallel-execution'
+check "routes 'parallel' → parallel-execution" $?
+
+# v4: route 'benchmark' → self-improve
+out="$(echo '{"prompt":"run the benchmark and score Mythos"}' \
+  | bash "$P/hooks/smart-router.sh" 2>/dev/null)"
+echo "$out" | grep -q 'self-improve'
+check "routes 'benchmark' → self-improve" $?
+
+# v4: route 'mcp' → mcp-orchestrator
+out="$(echo '{"prompt":"use the mcp filesystem server to find a file"}' \
+  | bash "$P/hooks/smart-router.sh" 2>/dev/null)"
+echo "$out" | grep -q 'mcp-orchestrator'
+check "routes 'mcp' → mcp-orchestrator" $?
+
 section "Behavior: observability + session-state + precompact"
 echo '{"session_id":"test","tool_name":"Read"}' \
   | bash "$P/hooks/observability.sh" "TestEvent" >/dev/null 2>&1
@@ -171,6 +226,30 @@ bash "$P/hooks/precompact-snapshot.sh" </dev/null >/dev/null 2>&1
 check "precompact-snapshot run" $?
 [ -s "$P/.claude/memory/precompact-snapshot.md" ]
 check "precompact-snapshot.md non-empty" $?
+
+# v4: self-eval appends a JSON row to eval-metrics.jsonl on SessionEnd.
+section "Behavior: self-eval"
+rm -f "$P/.claude/memory/eval-metrics.jsonl.preflight"
+TMP_METRICS="$P/.claude/memory/eval-metrics.jsonl"
+PRE_LINES=0
+[ -f "$TMP_METRICS" ] && PRE_LINES=$(wc -l < "$TMP_METRICS" | tr -d ' ')
+bash "$P/hooks/self-eval.sh" </dev/null >/dev/null 2>&1
+check "self-eval runs without error" $?
+POST_LINES=0
+[ -f "$TMP_METRICS" ] && POST_LINES=$(wc -l < "$TMP_METRICS" | tr -d ' ')
+[ "$POST_LINES" -gt "$PRE_LINES" ]
+check "self-eval appended a metric row" $?
+[ -f "$TMP_METRICS" ] && tail -1 "$TMP_METRICS" | python3 -c "import json,sys; json.loads(sys.stdin.read())" 2>/dev/null
+check "self-eval row is valid JSON" $?
+
+# v4: execution-monitor handles a duration_ms payload without crashing and writes nothing on small durations.
+section "Behavior: execution-monitor"
+echo '{"tool_name":"Bash","tool_input":{"command":"echo hello"},"duration_ms":42}' \
+  | bash "$P/hooks/execution-monitor.sh" >/dev/null 2>&1
+check "execution-monitor accepts duration_ms (no crash)" $?
+echo '{"tool_name":"Bash","tool_input":{"command":"sleep 7"},"duration_ms":7000}' \
+  | bash "$P/hooks/execution-monitor.sh" >/dev/null 2>&1
+check "execution-monitor logs >5s commands (no crash)" $?
 
 # ─── 8. Summary ───────────────────────────────────────────────────────────────
 TOTAL=$((PASS+FAIL))
