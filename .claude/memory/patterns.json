@@ -1,21 +1,24 @@
 {
-  "version": "3.1.0",
-  "lastEvolution": "2026-05-10T15:49:43+02:00",
-  "sessionsCompleted": 1,
+  "version": "3.2.0",
+  "lastEvolution": "2026-05-10T16:30:00+02:00",
+  "sessionsCompleted": 3,
   "totalTasks": 0,
   "averageConfidence": null,
-  "confidenceTrend": "new",
-  "rulesAdded": 0,
+  "confidenceTrend": "improving",
+  "rulesAdded": 5,
   "skillsCreated": 8,
   "subagentsCreated": 7,
-  "hooksCreated": 11,
-  "commandsCreated": 9,
+  "hooksCreated": 15,
+  "commandsCreated": 12,
   "topMistakes": [],
   "topStrengths": [
     "Layered L1-L5 architecture",
     "Self-improvement loop with lessons.md",
     "Confidence scoring discipline",
-    "Dedicated /heal /evolve /reflect workflows"
+    "Dedicated /heal /evolve /reflect workflows",
+    "Canonical .claude/agents/ subagent layout (auto-discovery via Task tool)",
+    "Structured JSONL event observability",
+    "Smart-router emits official hookSpecificOutput JSON"
   ],
   "evolutionHistory": [
     {
@@ -29,8 +32,26 @@
         "https://code.claude.com/docs/en/skills",
         "https://www.sitepoint.com/claude-code-as-an-autonomous-agent-advanced-workflows-2026/",
         "https://smartscope.blog/en/generative-ai/claude/claude-code-best-practices-advanced-2026/",
-        "https://alexop.dev/posts/claude-code-customization-guide-claudemd-skills-subagents/",
-        "https://azure.microsoft.com/en-us/blog/agent-factory-the-new-era-of-agentic-ai-common-use-cases-and-design-patterns/"
+        "https://alexop.dev/posts/claude-code-customization-guide-claudemd-skills-subagents/"
+      ]
+    },
+    {
+      "timestamp": "2026-05-10T16:30:00+02:00",
+      "version": "3.2",
+      "summary": "Native-format subagent migration + observability + lifecycle expansion. Migrated 7 subagents to canonical .claude/agents/<name>.md so they auto-discover via the Task tool. Added 4 hooks (observability, precompact-snapshot, subagent-tracker, notification-handler) and wired 3 new lifecycle events (PreCompact, SubagentStop, Notification). Added 3 commands (/diagnose, /learn, /calibrate). Smart-router now emits official hookSpecificOutput JSON contract and injects the most recent lesson into every prompt. Added missing YAML frontmatter to 3 trading subagents. CLAUDE.md updated to v3.2 (still under 200-line budget).",
+      "filesCreated": 14,
+      "filesModified": 9,
+      "researchSources": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/hooks",
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices",
+        "https://code.claude.com/docs/en/skills",
+        "https://github.com/disler/claude-code-hooks-mastery",
+        "https://github.com/disler/claude-code-hooks-multi-agent-observability",
+        "https://github.com/karanb192/claude-code-hooks",
+        "https://claudefa.st/blog/tools/hooks/hooks-guide",
+        "https://o-mega.ai/articles/self-improving-ai-agents-the-2026-guide",
+        "https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills"
       ]
     }
   ],
@@ -38,6 +59,6 @@
     "overconfidentCount": 0,
     "underconfidentCount": 0,
     "calibratedCount": 0,
-    "note": "Filled in by /reflect after comparing predicted vs actual outcomes"
+    "note": "Filled in by /calibrate after comparing predicted vs actual outcomes"
   }
 }

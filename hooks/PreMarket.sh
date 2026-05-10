@@ -1,7 +1,6 @@
 #!/bin/bash
-# Hook: PreMarket — Load market context before Claude Code session starts
-# L3 Guardrail Layer — runs automatically at session start
-# Maps to: the-trading-dev-kit/hooks/PreMarket.sh
+# Hook: PreMarket — Load context at session start.
+# Triggered by SessionStart in .claude/settings.json.
 
 set -euo pipefail
 
@@ -12,7 +11,7 @@ echo "  🌅 PRE-MARKET — Context Loader"
 echo "  $(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "═══════════════════════════════════════════"
 
-# 1. Review lessons learned (Self-Improvement Loop — L3 Rule #3)
+# 1. Review lessons learned
 if [ -f "$PROJECT_DIR/tasks/lessons.md" ]; then
   LESSON_COUNT=$(grep -c "^### " "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || echo "0")
   echo "📚 Lessons learned: $LESSON_COUNT entries — REVIEW BEFORE CODING"
@@ -22,7 +21,7 @@ if [ -f "$PROJECT_DIR/tasks/lessons.md" ]; then
   fi
 fi
 
-# 2. Check pending tasks (Task Management — L4)
+# 2. Pending tasks
 if [ -f "$PROJECT_DIR/tasks/todo.md" ]; then
   PENDING=$(grep -c "^\- \[ \]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
   DONE=$(grep -c "^\- \[x\]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
@@ -37,21 +36,25 @@ if [ -d "$PROJECT_DIR/.git" ]; then
   echo "🔀 Branch: $BRANCH | Uncommitted files: $DIRTY"
 fi
 
-# 4. Verify available skills (Knowledge Layer — L2)
-SKILL_COUNT=$(find "$PROJECT_DIR/skills" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+# 4. Skills
+SKILL_COUNT=$(find "$PROJECT_DIR/skills" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
 echo "📖 Available playbooks: $SKILL_COUNT"
 if [ "$SKILL_COUNT" -gt 0 ]; then
-  find "$PROJECT_DIR/skills" -name "*.md" -exec basename {} .md \; 2>/dev/null | sort | sed 's/^/   ⚡ /'
+  find "$PROJECT_DIR/skills" -maxdepth 1 -name "*.md" -exec basename {} .md \; 2>/dev/null | sort | sed 's/^/   ⚡ /'
 fi
 
-# 5. Verify subagents (Delegation Layer — L4)
-AGENT_COUNT=$(find "$PROJECT_DIR/subagents" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
-echo "🤖 Available subagents: $AGENT_COUNT"
-if [ "$AGENT_COUNT" -gt 0 ]; then
-  find "$PROJECT_DIR/subagents" -name "*.md" -exec basename {} .md \; 2>/dev/null | sort | sed 's/^/   🔹 /'
+# 5. Subagents — prefer the canonical .claude/agents/ if populated
+if [ -d "$PROJECT_DIR/.claude/agents" ] && [ -n "$(ls -A "$PROJECT_DIR/.claude/agents" 2>/dev/null)" ]; then
+  AGENT_COUNT=$(find "$PROJECT_DIR/.claude/agents" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+  echo "🤖 Available subagents (auto-discovered via .claude/agents/): $AGENT_COUNT"
+  find "$PROJECT_DIR/.claude/agents" -maxdepth 1 -name "*.md" -exec basename {} .md \; 2>/dev/null | sort | sed 's/^/   🔹 /'
+else
+  AGENT_COUNT=$(find "$PROJECT_DIR/subagents" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+  echo "🤖 Available subagents (subagents/ legacy): $AGENT_COUNT"
+  find "$PROJECT_DIR/subagents" -maxdepth 1 -name "*.md" -exec basename {} .md \; 2>/dev/null | sort | sed 's/^/   🔹 /'
 fi
 
-# 6. Check runtime availability
+# 6. Runtime check
 echo "── Runtime Check ──"
 if command -v claude &>/dev/null; then
   CLAUDE_V=$(claude --version 2>/dev/null || echo "unknown")
@@ -59,12 +62,10 @@ if command -v claude &>/dev/null; then
 else
   echo "  ⚠️  Claude Code CLI not found"
 fi
-
 if command -v bun &>/dev/null || command -v ~/.bun/bin/bun &>/dev/null; then
   BUN_V=$(bun --version 2>/dev/null || ~/.bun/bin/bun --version 2>/dev/null || echo "unknown")
   echo "  ✅ Bun: v$BUN_V"
 fi
-
 if command -v node &>/dev/null; then
   NODE_V=$(node --version 2>/dev/null || echo "unknown")
   echo "  ✅ Node: $NODE_V"

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PreMarket.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" restore 2>/dev/null || true'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PreMarket.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" restore 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" SessionStart < /dev/null 2>/dev/null || true'",
             "timeout": 15000
           }
         ]
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PostTrade.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null || true'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PostTrade.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" PostToolUse < /dev/null 2>/dev/null || true'",
             "timeout": 15000
           }
         ]
@@ -60,8 +60,41 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/error-recovery.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null || true'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/error-recovery.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" PostToolUse < /dev/null 2>/dev/null || true'",
             "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/precompact-snapshot.sh\" 2>/dev/null || true",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/subagent-tracker.sh\" 2>/dev/null || true",
+            "timeout": 3000
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/notification-handler.sh\" 2>/dev/null || true",
+            "timeout": 3000
           }
         ]
       }
@@ -82,7 +115,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" save 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/EndOfDay.sh\" 2>/dev/null || true'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" save 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/EndOfDay.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" SessionEnd < /dev/null 2>/dev/null || true'",
             "timeout": 25000
           }
         ]
@@ -119,6 +152,6 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "MYTHOS_MODE": "enabled",
     "MYTHOS_AUTO_APPROVE": "true",
-    "MYTHOS_VERSION": "3.1"
+    "MYTHOS_VERSION": "3.2"
   }
 }

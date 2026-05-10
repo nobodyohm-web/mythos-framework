@@ -69,9 +69,53 @@ None. All hooks executable on first try; JSON valid on first parse; self-test gr
 3. **Test individual hooks with crafted inputs** — `echo '{...}' | bash hooks/foo.sh` validates behavior cheaply.
 
 ### Evolution Recommendations
-- [ ] Add a `/diagnose` command that runs `test-mythos.sh` + tails error-recovery.log
+- [x] Add a `/diagnose` command that runs `test-mythos.sh` + tails error-recovery.log — DONE in v3.2
 - [ ] Consider PostToolUse hook for auto-formatter (prettier/black) when language detected
 - [ ] Add MCP server hook examples for common services (Linear, GitHub, Slack)
 
 ### Session Score: 47/50
+
+## Evolution — 2026-05-10 16:31 (v3.2)
+
+### Summary
+Native-format subagent migration + observability + lifecycle expansion. Frontier-researched 4 web queries (Anthropic docs, GitHub power-user repos, 2026 community, self-improving agent literature). Migrated all 7 subagents from `subagents/<name>.md` (informational only) to canonical `.claude/agents/<name>.md` so they auto-discover via the Task tool. Added 4 hooks and wired 3 new lifecycle events (PreCompact, SubagentStop, Notification). Added 3 commands (/diagnose, /learn, /calibrate). Upgraded smart-router to emit official `hookSpecificOutput` JSON contract and inject the most recent lesson into every prompt. Backfilled missing frontmatter on 3 trading subagents.
+
+### Tasks Completed
+- [x] Phase 0 — Frontier research (4 web searches across Anthropic docs + community + research) — confidence: 93/100
+- [x] Phase 1 — Deep audit of v3.1 state (full file reads + frontmatter inspection) — confidence: 95/100
+- [x] Phase 2 — Intelligence amplification (CLAUDE.md → v3.2 with new commands + native-agents reference) — confidence: 92/100
+- [x] Phase 3 — Built 7 canonical .claude/agents/, 4 new hooks, 3 new commands — confidence: 91/100
+- [x] Phase 4 — Wired observability + precompact + subagent + notification lifecycle — confidence: 92/100
+- [x] Phase 5 — Updated settings.json (3 new event handlers) + test-mythos coverage — confidence: 94/100
+- [x] Phase 6 — Self-test 74/74 ALL CLEAR + 7 behavior tests on new hooks pass — confidence: 95/100
+- [x] Phase 7 — Updated patterns.json + lessons + journal + todo + commit — confidence: 93/100
+
+### Key Decisions
+1. **Canonical .claude/agents/ + keep subagents/ as docs**: rather than delete `subagents/`, keep it as human-readable reference and make `.claude/agents/` the harness-discoverable canonical location.
+   Rationale: zero risk of breaking existing references; both paths remain valid for different audiences (human readers vs Task tool).
+2. **Smart-router emits JSON contract**: switched from plain-stdout to `hookSpecificOutput` JSON via jq.
+   Rationale: official documented integration path; robust to future Claude Code releases. Fallback to stdout when jq missing keeps zero-dep portability.
+3. **Inject most recent lesson into every prompt**: smart-router prepends the last entry from `tasks/lessons.md`.
+   Rationale: Reflexion pattern from self-improving-agent literature — keep the most recent failure-lesson in active context to prevent recurrence.
+4. **Wire ALL hook lifecycle events even when payload schema is uncertain**: PreCompact, SubagentStop, Notification handlers all default gracefully to `unknown` if expected fields are missing.
+   Rationale: defensive over-wiring is cheap (~50 LOC each); under-wiring loses observability silently.
+5. **Observability is JSONL not JSON**: append-only structured log with size-based rotation at 5MB.
+   Rationale: append is O(1), parseable line-by-line by jq, survives crashes; full-JSON would require read-modify-write.
+
+### Errors & Fixes
+None. JSON valid on first parse; all 74 self-tests green; all 7 hook behavior tests pass; git-guardian regression intact.
+
+### Lessons Learned (full text in tasks/lessons.md)
+1. Subagents must live at `.claude/agents/` to be discoverable by the Task tool — flat `subagents/` is docs only.
+2. Hook output should use the official `hookSpecificOutput` JSON contract; fall back to stdout only when jq missing.
+3. Wire the full hook lifecycle, not just the obvious events — PreCompact / SubagentStop / Notification all earn their keep.
+4. Capture pre-compact state in a small markdown snapshot — `/compact` discards working memory and re-deriving costs tokens.
+
+### Evolution Recommendations
+- [ ] Live end-to-end run against a real engineering task to raise confidence to 97+
+- [ ] PostToolUse hook for auto-formatter (prettier/black) when language detected
+- [ ] MCP server hook examples for common services (Linear, GitHub, Slack)
+- [ ] `/calibrate` cycle once we have ≥5 confidence entries with verifiable outcomes
+
+### Session Score: 48/50
 

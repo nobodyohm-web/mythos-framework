@@ -9,6 +9,11 @@
 .claude/memory/.context-guardian-*
 .claude/memory/last-session-state.json
 .claude/memory/error-recovery.log
+.claude/memory/events.jsonl
+.claude/memory/events.jsonl.*
+.claude/memory/notifications.log
+.claude/memory/subagents.log
+.claude/memory/precompact-snapshot.md
 
 # Node
 node_modules/

@@ -38,3 +38,14 @@
   - No CI integration tested (`claude -p` non-interactive mode); should be exercised in a follow-up.
 **Why not 95+:** Have not yet observed the system run end-to-end against a real engineering task. Self-test verifies structure; live verification raises confidence further.
 
+### 2026-05-10 16:31 — Mythos v3.2 Evolution
+**Confidence:** 93/100
+**Approach:** Frontier-research-driven (10 sources across Anthropic docs + 2026 community + GitHub power-user repos). Migrated 7 subagents to canonical `.claude/agents/` so they actually invoke via the Task tool. Added 4 lifecycle hooks (observability JSONL, precompact snapshot, subagent tracker, notification handler) and wired 3 new events (PreCompact, SubagentStop, Notification). Added 3 commands (/diagnose, /learn, /calibrate). Smart-router now emits the official `hookSpecificOutput` JSON contract and injects the most recent lesson into every prompt. Added missing frontmatter to 3 trading subagents.
+**Changes:** 14 files created, 9 modified
+**Verification:** ✅ JSON valid (settings + patterns) | ✅ self-test 74/74 ALL CLEAR | ✅ behavior tests pass on all new hooks | ✅ git-guardian regression: force-push still blocked, normal push allowed | ✅ smart-router emits valid JSON contract verified end-to-end | ✅ CLAUDE.md 150 lines (under 200 budget)
+**Concerns:**
+  - Notification hook untested in live session (depends on harness emitting Notification events; we behavior-tested with synthetic stdin only).
+  - Subagent-tracker assumes the SubagentStop payload includes `subagent_type` / `duration_ms`; harness payload shape may evolve — non-blocking, defaults gracefully to `unknown`.
+  - Observability log uses sed-based JSON extraction — robust enough for known fields but would benefit from `jq` parsing if we later need richer queries.
+**Why not 97+:** Same as v3.1 — structural verification only. Live end-to-end run against a real engineering task would raise to 97. Will reassess after first real /mythosrun cycle.
+

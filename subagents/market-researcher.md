@@ -1,3 +1,10 @@
+---
+name: market-researcher
+description: Market research specialist. Delegate before any trade setup analysis, when market conditions are unclear, or when a catalyst/event needs investigation. Read-only; cites sources.
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
+model: opus
+---
+
 # Subagent: Market Researcher
 
 ## Role

@@ -30,11 +30,29 @@
 - [x] Persist research findings to .claude/memory/research-cache.md
 - [x] Self-test the system via hooks/test-mythos.sh
 
+### Mythos v3.2 — Native Subagents + Observability + Lifecycle (2026-05-10)
+- [x] Frontier-research: 4 searches across Anthropic docs + GitHub power-users + 2026 community + self-improving-agent literature
+- [x] Migrate 7 subagents to canonical `.claude/agents/<name>.md` (auto-discovered by Task tool)
+- [x] Backfill YAML frontmatter on 3 legacy `subagents/` trading specs
+- [x] Add hook: `observability.sh` (JSONL event stream w/ 5MB rotation)
+- [x] Add hook: `precompact-snapshot.sh` (markdown snapshot before /compact)
+- [x] Add hook: `subagent-tracker.sh` (logs subagent invocations + duration)
+- [x] Add hook: `notification-handler.sh` (logs + optional macOS desktop notify)
+- [x] Wire 3 new lifecycle events in settings.json: PreCompact, SubagentStop, Notification
+- [x] Upgrade smart-router to emit official `hookSpecificOutput` JSON + inject latest lesson
+- [x] Add commands: `/diagnose`, `/learn`, `/calibrate`
+- [x] Update CLAUDE.md → v3.2 (still 150 lines, under 200 budget)
+- [x] Update test-mythos.sh to validate `.claude/agents/` + new hooks + new events (74 checks)
+- [x] Update PreMarket.sh to prefer `.claude/agents/` when populated, fall back to `subagents/`
+- [x] Behavior-test all 4 new hooks + smart-router JSON output + git-guardian regression
+- [x] Update patterns.json → v3.2 entry with full evolution metadata + 10 research sources
+
 ### Next Steps
 - [ ] First end-to-end session test against a real project
 - [ ] Add project-specific skills as needed
 - [ ] Configure MCP servers if applicable
 - [ ] Set up CI integration via `claude -p` non-interactive mode
+- [ ] First `/calibrate` cycle once 5+ confidence entries have verifiable outcomes
 
 ---
 

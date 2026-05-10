@@ -1,6 +1,6 @@
 #!/bin/bash
 # Hook: test-mythos — Self-test the entire Mythos system
-# Verifies: file presence, JSON validity, hook executability, frontmatter validity
+# Verifies: file presence, JSON validity, hook executability, frontmatter validity, hook wiring
 # Run: bash hooks/test-mythos.sh
 
 set -uo pipefail
@@ -17,7 +17,7 @@ red()   { echo "  ❌ $1"; FAIL=$((FAIL+1)); }
 yel()   { echo "  ⚠️  $1"; WARN=$((WARN+1)); }
 
 echo "═══════════════════════════════════════════"
-echo "  🧪 MYTHOS SELF-TEST"
+echo "  🧪 MYTHOS SELF-TEST  (v3.2)"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "═══════════════════════════════════════════"
 
@@ -53,7 +53,8 @@ done
 echo "── Hooks ──"
 for h in PreMarket.sh PostTrade.sh EndOfDay.sh auto-learn.sh verify-completion.sh \
          smart-router.sh context-guardian.sh git-guardian.sh \
-         error-recovery.sh session-state.sh test-mythos.sh; do
+         error-recovery.sh session-state.sh test-mythos.sh \
+         observability.sh precompact-snapshot.sh subagent-tracker.sh notification-handler.sh; do
   P="hooks/$h"
   if [ -f "$P" ]; then
     if [ -x "$P" ]; then
@@ -77,16 +78,30 @@ for s in breakout pullback mean-reversion debug-detective architect code-review 
   fi
 done
 
-# 6. Subagents
-echo "── Subagents ──"
+# 6. Subagents — both legacy doc location AND canonical .claude/agents/ location
+echo "── Subagents (.claude/agents/ canonical) ──"
+for a in architect debugger optimizer security-auditor journal-analyzer market-researcher risk-manager; do
+  P=".claude/agents/$a.md"
+  if [ -f "$P" ]; then
+    head -1 "$P" | grep -q '^---$' && green ".claude/agents/$a.md has frontmatter" || yel ".claude/agents/$a.md missing YAML frontmatter"
+  else
+    red ".claude/agents/$a.md MISSING"
+  fi
+done
+
+echo "── Subagents (subagents/ legacy docs) ──"
 for a in market-researcher risk-manager journal-analyzer architect debugger optimizer security-auditor; do
   P="subagents/$a.md"
-  [ -f "$P" ] && green "subagents/$a.md exists" || red "subagents/$a.md MISSING"
+  if [ -f "$P" ]; then
+    head -1 "$P" | grep -q '^---$' && green "subagents/$a.md has frontmatter" || yel "subagents/$a.md missing YAML frontmatter"
+  else
+    red "subagents/$a.md MISSING"
+  fi
 done
 
 # 7. Slash commands
 echo "── Slash commands ──"
-for c in mythosrun evolve heal deepaudit swarm reflect bootstrap ship research; do
+for c in mythosrun evolve heal deepaudit swarm reflect bootstrap ship research diagnose learn calibrate; do
   P=".claude/commands/$c.md"
   [ -f "$P" ] && green "/$c command exists" || red "/$c command MISSING"
 done
@@ -98,10 +113,10 @@ for t in lessons.md confidence-log.md todo.md session-journal.md; do
   [ -f "$P" ] && green "tasks/$t exists" || red "tasks/$t MISSING"
 done
 
-# 9. Settings.json wiring sanity
+# 9. Settings.json wiring sanity — including new v3.2 events
 echo "── Hook wiring ──"
 if [ -f .claude/settings.json ]; then
-  for ev in SessionStart SessionEnd PostToolUse Stop; do
+  for ev in SessionStart SessionEnd UserPromptSubmit PreToolUse PostToolUse Stop PreCompact SubagentStop Notification; do
     grep -q "\"$ev\"" .claude/settings.json && green "$ev wired" || yel "$ev not wired"
   done
 fi
@@ -112,6 +127,7 @@ command -v claude &>/dev/null && green "claude CLI: $(claude --version 2>/dev/nu
 command -v bun &>/dev/null && green "bun: $(bun --version)" || yel "bun not in PATH"
 command -v node &>/dev/null && green "node: $(node --version)" || yel "node not in PATH"
 command -v git &>/dev/null && green "git: $(git --version | awk '{print $3}')" || red "git not in PATH"
+command -v jq &>/dev/null && green "jq present (smart-router uses JSON output)" || yel "jq not in PATH (smart-router will fall back to plain stdout)"
 
 # Summary
 echo "═══════════════════════════════════════════"
