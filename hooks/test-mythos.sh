@@ -1,144 +1,184 @@
-#!/bin/bash
-# Hook: test-mythos — Self-test the entire Mythos system
-# Verifies: file presence, JSON validity, hook executability, frontmatter validity, hook wiring
-# Run: bash hooks/test-mythos.sh
+#!/usr/bin/env bash
+# test-mythos — self-test harness. Validates the Mythos system end-to-end:
+# files exist, hooks executable, JSON valid, hooks behave correctly under
+# crafted stdin. Exit 0 = all green, exit 1 = any failure.
+#
+# Usage: bash hooks/test-mythos.sh [--verbose]
+. "${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}/hooks/_lib.sh"
 
-set -uo pipefail
+VERBOSE=0
+[ "${1:-}" = "--verbose" ] && VERBOSE=1
 
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-cd "$PROJECT_DIR"
+PASS=0; FAIL=0
+RED=$'\033[31m'; GRN=$'\033[32m'; DIM=$'\033[2m'; OFF=$'\033[0m'
 
-PASS=0
-FAIL=0
-WARN=0
+check() {
+  local label="$1" status="$2" detail="${3:-}"
+  if [ "$status" -eq 0 ]; then
+    PASS=$((PASS+1))
+    [ "$VERBOSE" -eq 1 ] && printf '  %s✓%s %s\n' "$GRN" "$OFF" "$label"
+  else
+    FAIL=$((FAIL+1))
+    printf '  %s✗%s %s%s%s\n' "$RED" "$OFF" "$label" "${detail:+ — }" "$detail"
+  fi
+}
 
-green() { echo "  ✅ $1"; PASS=$((PASS+1)); }
-red()   { echo "  ❌ $1"; FAIL=$((FAIL+1)); }
-yel()   { echo "  ⚠️  $1"; WARN=$((WARN+1)); }
+section() { printf '\n%s── %s ──%s\n' "$DIM" "$1" "$OFF"; }
 
-echo "═══════════════════════════════════════════"
-echo "  🧪 MYTHOS SELF-TEST  (v3.2)"
-echo "  $(date '+%Y-%m-%d %H:%M:%S')"
-echo "═══════════════════════════════════════════"
+P="$MYTHOS_PROJECT_DIR"
 
-# 1. Core files
-echo "── Core files ──"
-for f in CLAUDE.md Risk.md .claude/settings.json .claude/memory/patterns.json; do
-  [ -f "$f" ] && green "$f exists" || red "$f MISSING"
+# ─── 1. Required files ────────────────────────────────────────────────────────
+section "Files & directories"
+for f in CLAUDE.md Risk.md \
+         .claude/settings.json .claude/memory/patterns.json \
+         tasks/lessons.md tasks/confidence-log.md tasks/session-journal.md tasks/todo.md
+do
+  [ -f "$P/$f" ]; check "exists: $f" $?
 done
 
-# 2. CLAUDE.md size sanity
-LINES=$(wc -l < CLAUDE.md | tr -d ' ')
-if [ "$LINES" -le 200 ]; then
-  green "CLAUDE.md is $LINES lines (≤200 budget)"
+for d in .claude/agents .claude/commands .claude/memory skills tasks hooks; do
+  [ -d "$P/$d" ]; check "dir:    $d" $?
+done
+
+# ─── 2. Hooks: present & executable ───────────────────────────────────────────
+section "Hooks"
+HOOKS=(_lib.sh PreMarket.sh PostTrade.sh EndOfDay.sh \
+       smart-router.sh git-guardian.sh context-guardian.sh error-recovery.sh \
+       session-state.sh observability.sh precompact-snapshot.sh subagent-tracker.sh \
+       notification-handler.sh verify-completion.sh auto-learn.sh test-mythos.sh)
+for h in "${HOOKS[@]}"; do
+  [ -f "$P/hooks/$h" ]; check "file:  hooks/$h" $?
+done
+for h in "${HOOKS[@]}"; do
+  [ -x "$P/hooks/$h" ]; check "+x:    hooks/$h" $?
+done
+
+# ─── 3. JSON config validity ──────────────────────────────────────────────────
+section "JSON validity"
+python3 -c "import json,sys; json.load(open('$P/.claude/settings.json'))" 2>/dev/null
+check "settings.json parses"               $?
+python3 -c "import json,sys; json.load(open('$P/.claude/memory/patterns.json'))" 2>/dev/null
+check "patterns.json parses"               $?
+
+# settings.json must wire every hook the lifecycle declares.
+for h in smart-router git-guardian context-guardian error-recovery \
+         session-state observability precompact-snapshot subagent-tracker \
+         notification-handler verify-completion auto-learn PreMarket PostTrade EndOfDay
+do
+  grep -q "$h.sh" "$P/.claude/settings.json"
+  check "settings.json wires $h.sh" $?
+done
+
+# ─── 4. CLAUDE.md size budget ─────────────────────────────────────────────────
+section "CLAUDE.md budget"
+lines="$(wc -l <"$P/CLAUDE.md" | tr -d ' ')"
+[ "$lines" -le 200 ]
+check "CLAUDE.md ≤ 200 lines (actual: $lines)" $?
+
+# ─── 5. Subagents: canonical layout + frontmatter ─────────────────────────────
+section "Subagents"
+for f in "$P"/.claude/agents/*.md; do
+  [ -f "$f" ] || continue
+  head -1 "$f" | grep -q '^---$'
+  check "frontmatter open: $(basename "$f")" $?
+  grep -q '^name:' "$f"
+  check "frontmatter name: $(basename "$f")" $?
+  grep -q '^description:' "$f"
+  check "frontmatter desc: $(basename "$f")" $?
+done
+
+# ─── 6. Skills: present ───────────────────────────────────────────────────────
+section "Skills"
+for s in debug-detective architect code-review tdd refactor; do
+  [ -f "$P/skills/$s.md" ]; check "skill:  skills/$s.md" $?
+done
+
+# ─── 7. Behavior tests on hooks ───────────────────────────────────────────────
+section "Behavior: git-guardian"
+
+# 7a. Force-push to main MUST be blocked (exit 2).
+echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' \
+  | bash "$P/hooks/git-guardian.sh" bash >/dev/null 2>&1
+[ $? -eq 2 ]; check "blocks force-push to main" $?
+
+# 7b. Normal push allowed (exit 0).
+echo '{"tool_name":"Bash","tool_input":{"command":"git push origin feature-branch"}}' \
+  | bash "$P/hooks/git-guardian.sh" bash >/dev/null 2>&1
+[ $? -eq 0 ]; check "allows normal push" $?
+
+# 7c. rm -rf / blocked.
+echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' \
+  | bash "$P/hooks/git-guardian.sh" bash >/dev/null 2>&1
+[ $? -eq 2 ]; check "blocks rm -rf /" $?
+
+# 7d. --no-verify blocked.
+echo '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"x\" --no-verify"}}' \
+  | bash "$P/hooks/git-guardian.sh" bash >/dev/null 2>&1
+[ $? -eq 2 ]; check "blocks --no-verify" $?
+
+# 7e. Writing to .env blocked.
+echo '{"tool_name":"Write","tool_input":{"file_path":"/x/.env"}}' \
+  | bash "$P/hooks/git-guardian.sh" file >/dev/null 2>&1
+[ $? -eq 2 ]; check "blocks write to .env" $?
+
+# 7f. Writing to a normal file allowed.
+echo '{"tool_name":"Write","tool_input":{"file_path":"/x/foo.py"}}' \
+  | bash "$P/hooks/git-guardian.sh" file >/dev/null 2>&1
+[ $? -eq 0 ]; check "allows write to .py file" $?
+
+# 7g. NEW: dangerous patterns inside a quoted argument MUST NOT trigger.
+#     Regression test for the "git commit -m '...rm -rf /...'" false positive.
+echo '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"refactor: removed rm -rf / shortcut\""}}' \
+  | bash "$P/hooks/git-guardian.sh" bash >/dev/null 2>&1
+[ $? -eq 0 ]; check "allows quoted 'rm -rf /' inside commit message" $?
+
+# 7h. NEW: '... && rm -rf /' as a chained command MUST be blocked.
+echo '{"tool_name":"Bash","tool_input":{"command":"echo hi && rm -rf /"}}' \
+  | bash "$P/hooks/git-guardian.sh" bash >/dev/null 2>&1
+[ $? -eq 2 ]; check "blocks chained '&& rm -rf /'" $?
+
+# 7i. NEW: 'echo "git push --force main"' MUST NOT trigger (string content).
+echo '{"tool_name":"Bash","tool_input":{"command":"echo \"git push --force main\""}}' \
+  | bash "$P/hooks/git-guardian.sh" bash >/dev/null 2>&1
+[ $? -eq 0 ]; check "allows quoted 'git push --force main' as string" $?
+
+section "Behavior: smart-router"
+out="$(echo '{"prompt":"there is a bug in the parser causing a crash"}' \
+  | bash "$P/hooks/smart-router.sh" 2>/dev/null)"
+echo "$out" | grep -q '"hookSpecificOutput"'
+check "emits hookSpecificOutput JSON" $?
+echo "$out" | grep -q 'debug-detective'
+check "routes 'bug' → debug-detective" $?
+
+out="$(echo '{"prompt":"design the API schema for the new service"}' \
+  | bash "$P/hooks/smart-router.sh" 2>/dev/null)"
+echo "$out" | grep -q 'architect'
+check "routes 'design' → architect" $?
+
+section "Behavior: observability + session-state + precompact"
+echo '{"session_id":"test","tool_name":"Read"}' \
+  | bash "$P/hooks/observability.sh" "TestEvent" >/dev/null 2>&1
+check "observability writes (no crash)" $?
+[ -f "$MYTHOS_EVENTS_LOG" ] && grep -q '"event":"TestEvent"' "$MYTHOS_EVENTS_LOG"
+check "TestEvent landed in events.jsonl" $?
+
+bash "$P/hooks/session-state.sh" save </dev/null >/dev/null 2>&1
+check "session-state save" $?
+python3 -c "import json; json.load(open('$P/.claude/memory/last-session-state.json'))" 2>/dev/null
+check "last-session-state.json valid JSON" $?
+
+bash "$P/hooks/precompact-snapshot.sh" </dev/null >/dev/null 2>&1
+check "precompact-snapshot run" $?
+[ -s "$P/.claude/memory/precompact-snapshot.md" ]
+check "precompact-snapshot.md non-empty" $?
+
+# ─── 8. Summary ───────────────────────────────────────────────────────────────
+TOTAL=$((PASS+FAIL))
+printf '\n──────────────────────────────────────\n'
+if [ "$FAIL" -eq 0 ]; then
+  printf '%s✓ ALL CLEAR%s — %d/%d checks passed\n' "$GRN" "$OFF" "$PASS" "$TOTAL"
+  exit 0
 else
-  yel "CLAUDE.md is $LINES lines (>200 — consider trimming)"
-fi
-
-# 3. JSON validity
-echo "── JSON validity ──"
-for j in .claude/settings.json .claude/memory/patterns.json; do
-  if [ -f "$j" ]; then
-    if command -v python3 &>/dev/null; then
-      python3 -c "import json,sys; json.load(open('$j'))" 2>/dev/null \
-        && green "$j valid JSON" \
-        || red "$j INVALID JSON"
-    else
-      yel "$j — python3 not available, skipped JSON parse"
-    fi
-  fi
-done
-
-# 4. Hooks: present, executable, syntactically valid
-echo "── Hooks ──"
-for h in PreMarket.sh PostTrade.sh EndOfDay.sh auto-learn.sh verify-completion.sh \
-         smart-router.sh context-guardian.sh git-guardian.sh \
-         error-recovery.sh session-state.sh test-mythos.sh \
-         observability.sh precompact-snapshot.sh subagent-tracker.sh notification-handler.sh; do
-  P="hooks/$h"
-  if [ -f "$P" ]; then
-    if [ -x "$P" ]; then
-      bash -n "$P" 2>/dev/null && green "$h ok" || red "$h syntax error"
-    else
-      yel "$h not executable — run: chmod +x $P"
-    fi
-  else
-    red "$h MISSING"
-  fi
-done
-
-# 5. Skills: present + has frontmatter
-echo "── Skills ──"
-for s in breakout pullback mean-reversion debug-detective architect code-review tdd refactor; do
-  P="skills/$s.md"
-  if [ -f "$P" ]; then
-    head -1 "$P" | grep -q '^---$' && green "skills/$s.md has frontmatter" || yel "skills/$s.md missing YAML frontmatter"
-  else
-    red "skills/$s.md MISSING"
-  fi
-done
-
-# 6. Subagents — both legacy doc location AND canonical .claude/agents/ location
-echo "── Subagents (.claude/agents/ canonical) ──"
-for a in architect debugger optimizer security-auditor journal-analyzer market-researcher risk-manager; do
-  P=".claude/agents/$a.md"
-  if [ -f "$P" ]; then
-    head -1 "$P" | grep -q '^---$' && green ".claude/agents/$a.md has frontmatter" || yel ".claude/agents/$a.md missing YAML frontmatter"
-  else
-    red ".claude/agents/$a.md MISSING"
-  fi
-done
-
-echo "── Subagents (subagents/ legacy docs) ──"
-for a in market-researcher risk-manager journal-analyzer architect debugger optimizer security-auditor; do
-  P="subagents/$a.md"
-  if [ -f "$P" ]; then
-    head -1 "$P" | grep -q '^---$' && green "subagents/$a.md has frontmatter" || yel "subagents/$a.md missing YAML frontmatter"
-  else
-    red "subagents/$a.md MISSING"
-  fi
-done
-
-# 7. Slash commands
-echo "── Slash commands ──"
-for c in mythosrun evolve heal deepaudit swarm reflect bootstrap ship research diagnose learn calibrate; do
-  P=".claude/commands/$c.md"
-  [ -f "$P" ] && green "/$c command exists" || red "/$c command MISSING"
-done
-
-# 8. Task ledgers
-echo "── Task ledgers ──"
-for t in lessons.md confidence-log.md todo.md session-journal.md; do
-  P="tasks/$t"
-  [ -f "$P" ] && green "tasks/$t exists" || red "tasks/$t MISSING"
-done
-
-# 9. Settings.json wiring sanity — including new v3.2 events
-echo "── Hook wiring ──"
-if [ -f .claude/settings.json ]; then
-  for ev in SessionStart SessionEnd UserPromptSubmit PreToolUse PostToolUse Stop PreCompact SubagentStop Notification; do
-    grep -q "\"$ev\"" .claude/settings.json && green "$ev wired" || yel "$ev not wired"
-  done
-fi
-
-# 10. Runtime
-echo "── Runtime ──"
-command -v claude &>/dev/null && green "claude CLI: $(claude --version 2>/dev/null || echo unknown)" || yel "claude CLI not in PATH"
-command -v bun &>/dev/null && green "bun: $(bun --version)" || yel "bun not in PATH"
-command -v node &>/dev/null && green "node: $(node --version)" || yel "node not in PATH"
-command -v git &>/dev/null && green "git: $(git --version | awk '{print $3}')" || red "git not in PATH"
-command -v jq &>/dev/null && green "jq present (smart-router uses JSON output)" || yel "jq not in PATH (smart-router will fall back to plain stdout)"
-
-# Summary
-echo "═══════════════════════════════════════════"
-echo "  RESULT: $PASS passed | $FAIL failed | $WARN warnings"
-if [ "$FAIL" -gt 0 ]; then
-  echo "  ❌ MYTHOS SELF-TEST: FAILED"
+  printf '%s✗ FAILURES%s — %d/%d failed\n' "$RED" "$OFF" "$FAIL" "$TOTAL"
   exit 1
-elif [ "$WARN" -gt 0 ]; then
-  echo "  ⚠️  MYTHOS SELF-TEST: PASSED WITH WARNINGS"
-  exit 0
-else
-  echo "  ✅ MYTHOS SELF-TEST: ALL CLEAR"
-  exit 0
 fi

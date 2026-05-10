@@ -1,61 +1,42 @@
-# Risk Rules — Agentic Autonomy Kit
+# Risk Rules — Mythos Guardrails
 
-## Data Integrity Rules
+> Imported by `CLAUDE.md` via `@Risk.md`. These rules apply to **every** session.
 
-### Never Trust a Single Source
-- Cross-reference data from multiple sources before making decisions
-- When sources disagree, flag the discrepancy explicitly in the analysis
-- If a data point cannot be verified from at least 2 sources, mark it as "unconfirmed"
+---
 
-### API & External Call Safety
-- Every external API call MUST use retry logic with exponential backoff
-- Every tool function MUST wrap logic in try/catch — NEVER let a throw crash the agent
-- If a data source fails, degrade gracefully — produce partial analysis, never crash
-- Set explicit timeouts on ALL network calls (default: 10-15s)
+## Code Risk
 
-### Context & Token Safety
-- Monitor context window usage — stay within model limits
-- Auto-compact or summarize when context exceeds threshold
-- Never remove graceful degradation patterns (`.catch(() => [])` on optional fetches)
+| Rule | Enforcement |
+|------|-------------|
+| Never commit `.env`, `.env.*`, secrets, credentials, `*.pem`, `*.key` | `permissions.deny` + `git-guardian.sh` |
+| Never `git push --force` (or `-f`) to `main` / `master` | `permissions.deny` + `git-guardian.sh` |
+| Never `--no-verify` to skip git hooks | `git-guardian.sh` blocks; CLAUDE.md rule #5 |
+| Never `rm -rf /`, `rm -rf ~`, `rm -rf $HOME` | `permissions.deny` + `git-guardian.sh` |
+| Never amend a published commit | CLAUDE.md OPERATING MODE |
+| Never disable a failing test as a "fix" | `debug-detective.md` Anti-Patterns |
 
-## Code Safety Rules
+## Confidence Risk
 
-### Before ANY Edit
-1. Read the file first — understand current state
-2. Run typecheck/lint after changes — zero errors tolerated
-3. Run tests after logic changes — all tests must pass
-4. Never introduce `any` types (TypeScript) or untyped variables
+- **<70 confidence** → explain WHY and what would raise it. Do not ship.
+- **Two consecutive <70** → suggest `/evolve`.
+- Log every significant action's confidence to `tasks/confidence-log.md`.
 
-### Before ANY Commit
-1. Verify no `.env` files or API keys are staged
-2. Verify no test files or scratch files in root directory
-3. Verify typecheck/lint passes cleanly
-4. Verify all tests pass
+## Trading Risk (when applicable)
 
-### Destructive Operations — NEVER
-- Never delete or overwrite existing implementations without explicit user confirmation
-- Never modify core routing or orchestration without understanding implications
-- Never change compaction/summarization thresholds without load testing
-- Never alter hook execution order without testing the full chain
+| Rule | Detail |
+|------|--------|
+| Max risk per trade | 1% of account equity |
+| Max concurrent positions | 5 |
+| Max daily loss | 3% of account equity → halt for the day |
+| Stop-loss before entry | Mandatory; no naked entries |
+| No averaging down | Add only to winners (above entry, with trail) |
+| News/earnings exposure | No new positions within 24h of scheduled catalyst unless the play *is* the catalyst |
 
-## Analysis Quality Rules
+Personal overrides go in `Risk.local.md` (gitignored).
 
-### Scoring Must Be Auditable
-- Every score must include justification with traceable data
-- No black box scores — every number traceable to source data
-- When data is insufficient, explicitly state "DATA INSUFFICIENT" — never guess
+## Operational Risk
 
-### Final Output Must Be Actionable
-- Every analysis ends with a clear recommendation
-- Include confidence level and key assumptions
-- Catalysts/triggers must be specific and time-bound
-
-## Risk Escalation Protocol
-
-### Severity Levels
-| Level | Trigger | Action |
-|-------|---------|--------|
-| 🟢 LOW | Minor data gaps | Proceed with caveat noted |
-| 🟡 MEDIUM | Source disagreement | Flag in output, user decides |
-| 🔴 HIGH | Critical data failure | STOP, notify user, await instructions |
-| ⛔ CRITICAL | Security/credential exposure risk | ABORT immediately, alert user |
+- Test hooks behaviorally with crafted stdin before wiring (see `tasks/lessons.md` 2026-05-10).
+- Validate every JSON config with `python3 -c "import json; json.load(open(P))"` before commit.
+- Self-test (`hooks/test-mythos.sh`) must be green before any `/evolve` commit.
+- CLAUDE.md ≤ 200 lines, hard cap.

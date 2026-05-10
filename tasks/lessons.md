@@ -19,6 +19,24 @@ Each lesson follows this structure:
 
 <!-- Lessons will be appended below this line -->
 
+### 2026-05-10 — Wiring is not enforcement until the file exists
+**Mistake:** v3.2 settings.json wired 14 hooks (`bash hooks/X.sh ... || true`), but the `hooks/` directory was absent in this checkout. Every hook silently no-op'd thanks to `|| true`. The system *looked* fully evolved (patterns.json said "all green") but had zero runtime enforcement.
+**Root Cause:** Conflated configuration with implementation. A self-test that only checked settings.json structure (not file existence on disk) cannot detect missing implementations referenced by that config. The `|| true` fallback hid the failure.
+**Rule:** Every config reference must be paired with a presence check in `test-mythos.sh`. For hooks specifically: `[ -f hooks/X.sh ] && [ -x hooks/X.sh ]` for every script the settings.json file mentions. Never use `|| true` to swallow "file not found" — only to swallow "non-zero exit from a working file".
+
+### 2026-05-10 — Hook activation can block your own meta-tooling
+**Mistake:** Right after wiring git-guardian, ran a Bash command containing literal strings like `cat /home/x/.env` and `rm -rf /` (as JSON test payloads). The PreToolUse hook saw those substrings in the outer command and blocked execution.
+**Root Cause:** git-guardian inspects `.tool_input.command` from the harness, which is the FULL outer command — it cannot tell test heredocs from real commands. Substring detection is correct enforcement; it just doesn't distinguish authoring context from runtime.
+**Rule:** Embed hook behavior tests **inside `hooks/test-mythos.sh`** (which calls `bash hooks/X.sh` directly with crafted stdin), not as ad-hoc Bash one-liners from the agent. The self-test is invoked by the harness as `bash hooks/test-mythos.sh` — that outer string contains no dangerous substrings, so the hook stays out of its own way.
+
+### 2026-05-10 — Substring matching is too coarse for command guards
+**Mistake:** v3.3 git-guardian first pass flagged `git commit -m "...removed rm -rf / shortcut..."` as a destructive command. The dangerous pattern was inside a quoted argument (commit-message body), not the actual invocation. Result: legitimate commits were blocked.
+**Root Cause:** Used substring `grep -Eq` against the entire command line. A command guard must distinguish *invocations* from *string literals embedded in arguments*. Without doing real shell parsing, anchoring on shell-segment boundaries is the minimum viable heuristic.
+**Rule:** Anchor every guard pattern with `^` after splitting the command on shell separators (`;`, `&&`, `||`, `|`, newline) AND replacing quoted strings with a placeholder first. Each segment's leading invocation is what gets matched. Three regression tests now live in `test-mythos.sh`:
+  1. `git commit -m "...dangerous string..."` → MUST allow (quoted content).
+  2. `echo hi && rm -rf /` → MUST block (real chained invocation).
+  3. `echo "git push --force main"` → MUST allow (string content).
+
 ### 2026-05-10 — CLAUDE.md is a budget, not a wishlist
 **Mistake:** Initial CLAUDE.md was 268 lines including ascii diagrams, prose identity statements, and French verification blocks. Anthropic explicitly warns this causes Claude to ignore rules buried in noise.
 **Root Cause:** Mistook comprehensiveness for clarity. Added everything that "felt useful" rather than only what changed Claude's behavior.
@@ -59,16 +77,3 @@ Each lesson follows this structure:
 **Root Cause:** Treated /compact as "free" cleanup; ignored that it discards working memory.
 **Rule:** PreCompact hook persists a small markdown snapshot (`precompact-snapshot.md`) that the post-compact session can read in one Read call. Cheap insurance.
 
-
-### 2026-05-10 — SWE-bench benchmark results establish baseline
-**Context:** Tested Mythos v3.2 against SWE-bench Lite (Princeton NLP gold standard).
-**Results:** 2/2 pure resolutions (astropy-14365 Easy, django-16379 Hard). 1 resolved via git history search (django-11019 Boss).
-**Rule:** For future /benchmark runs, use `git clone --depth 1` to prevent git-history-based solutions. Measure pure reasoning ability.
-
-### 2026-05-10 — MCP servers unlock real-world tool access
-**Context:** Without MCP, Claude Code can only read/write files + bash. With MCP: GitHub PRs, browser, databases, memory.
-**Rule:** Always check `npx @anthropic-ai/claude-code-mcp` for available servers before building custom solutions.
-
-### 2026-05-10 — Multi-agent teams require clear task decomposition
-**Context:** Agent teams flag is enabled but never used for real parallel work.
-**Rule:** Before spawning agents, create a clear plan: 1 planner decomposes, N implementers execute in parallel, 1 reviewer merges. Never spawn agents without a coordination plan.
