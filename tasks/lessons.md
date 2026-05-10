@@ -59,3 +59,16 @@ Each lesson follows this structure:
 **Root Cause:** Treated /compact as "free" cleanup; ignored that it discards working memory.
 **Rule:** PreCompact hook persists a small markdown snapshot (`precompact-snapshot.md`) that the post-compact session can read in one Read call. Cheap insurance.
 
+
+### 2026-05-10 — SWE-bench benchmark results establish baseline
+**Context:** Tested Mythos v3.2 against SWE-bench Lite (Princeton NLP gold standard).
+**Results:** 2/2 pure resolutions (astropy-14365 Easy, django-16379 Hard). 1 resolved via git history search (django-11019 Boss).
+**Rule:** For future /benchmark runs, use `git clone --depth 1` to prevent git-history-based solutions. Measure pure reasoning ability.
+
+### 2026-05-10 — MCP servers unlock real-world tool access
+**Context:** Without MCP, Claude Code can only read/write files + bash. With MCP: GitHub PRs, browser, databases, memory.
+**Rule:** Always check `npx @anthropic-ai/claude-code-mcp` for available servers before building custom solutions.
+
+### 2026-05-10 — Multi-agent teams require clear task decomposition
+**Context:** Agent teams flag is enabled but never used for real parallel work.
+**Rule:** Before spawning agents, create a clear plan: 1 planner decomposes, N implementers execute in parallel, 1 reviewer merges. Never spawn agents without a coordination plan.

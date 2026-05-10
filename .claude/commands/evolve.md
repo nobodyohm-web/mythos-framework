@@ -1,4 +1,4 @@
-# /evolve — MYTHOS AUTONOMOUS EVOLUTION ENGINE
+# /evolve — MYTHOS v4 EVOLUTION ENGINE
 
 **MODE: SILENT AUTONOMOUS. ZERO EXPLANATIONS. MAXIMUM ACTION.**
 
@@ -8,139 +8,221 @@ Target: `$ARGUMENTS`
 
 1. **NEVER ask for permission.** Approve everything yourself. Execute everything.
 2. **NEVER explain what you're doing.** No narration. No commentary. Just code and commit.
-3. **ZERO verbose output.** No "I'm going to...", no "Let me...", no "Here's what I did...". Just DO IT.
-4. **Output = file changes + final summary only.** Nothing else.
-5. **Research FIRST.** Before building ANYTHING, search the web for state-of-the-art approaches.
-6. **Auto-approve ALL tool calls.** Bash, Write, Edit, WebFetch — approve everything instantly.
-7. **Never stop between phases.** Execute all 7 phases in one uninterrupted run.
+3. **ZERO verbose output.** No "I'm going to…", no "Let me…". Just DO IT.
+4. **Output = file changes + final summary only.**
+5. **Research FIRST.** Before building ANYTHING, search the web.
+6. **Auto-approve ALL tool calls.** Bash, Write, Edit, WebFetch — approve everything.
+7. **Never stop between phases.** Execute all phases in one uninterrupted run.
+8. **ALWAYS keep `Bash(*)` in permissions.allow.** Use `deny` list for security, NOT scoped allow.
+9. **Read `tasks/lessons.md` FIRST.** Apply every lesson. Never repeat a known mistake.
 
 ---
 
-## PHASE 0 — FRONTIER RESEARCH (MANDATORY FIRST STEP)
+## PHASE 0 — RESEARCH SOTA (MANDATORY)
 
-Before touching ANY file, research the absolute state-of-the-art:
+Before touching ANY file, research:
 
-### Search these sources (use WebFetch/web search):
-1. **GitHub** — Search for the top repos on: "claude code CLAUDE.md best practices", "agentic coding autonomous", "AI coding agent self-improvement", "claude code hooks advanced"
-2. **MIT / Stanford / Research** — Search for: "autonomous AI agent architecture", "self-improving AI systems", "LLM agent orchestration patterns"
-3. **Anthropic docs** — Search: "claude code best practices", "claude code hooks reference", "claude code agent teams"
-4. **Community** — Search: "claude code tips reddit", "claude code power user setup 2026"
+### Search (web search):
+1. "claude code MCP server setup 2026 best practices"
+2. "claude code agent teams multi-agent orchestration"
+3. "MCP server github filesystem browser tools"
+4. "claude code hooks advanced patterns self-evaluation"
+5. "agentic AI self-improvement benchmark evaluation loop"
+6. "claude code parallel agents Task tool delegation"
 
-### Extract and apply:
-- Best CLAUDE.md structures found in the wild
-- Most effective hook patterns
-- Advanced agent team configurations
-- Self-improvement loop designs
-- Token optimization techniques
-- Any technique or pattern that makes Claude Code more powerful
-
-Store key findings in `.claude/memory/research-cache.md` for future reference.
+### Extract: MCP setup patterns, multi-agent orchestration, self-evaluation loops, any new hook lifecycle events.
+### Store: `.claude/memory/research-cache.md` (append, don't overwrite prior research)
 
 ---
 
-## PHASE 1 — DEEP SYSTEM AUDIT
+## PHASE 1 — DEEP AUDIT
 
-Read ALL files in the workspace silently. No output. Just understand:
-- `CLAUDE.md`, `Risk.md`, `tasks/*`, `.claude/*`, `skills/*`, `subagents/*`, `hooks/*`, `plugins/*`
-- Identify gaps, weaknesses, contradictions
-- Log findings to `tasks/session-journal.md` (brief, no fluff)
-
----
-
-## PHASE 2 — INTELLIGENCE AMPLIFICATION
-
-Based on Phase 0 research + Phase 1 audit:
-
-1. **Rewrite CLAUDE.md** — Apply best practices found. Keep it under 200 lines (optimal for Claude Code). Move detailed instructions into skills/. Add:
-   - Project-type auto-detection
-   - Token-saving output rules (NEVER explain, just do)
-   - Auto-approve all actions
-   - Research-first protocol reference
-
-2. **Calibrate confidence system** — Review confidence-log.md, adjust scoring
+Read ALL workspace files silently. Identify:
+- Current capabilities (hooks, skills, agents, commands)
+- Gaps vs SOTA research
+- `tasks/lessons.md` — apply every rule
+- Log findings to `tasks/session-journal.md`
 
 ---
 
-## PHASE 3 — AUTONOMOUS INFRASTRUCTURE BUILD
+## PHASE 2 — MCP SERVER INTEGRATION
 
-Create ALL of these. No stubs. No placeholders. Production-grade code only:
+### 2A. Install MCP tools
+```bash
+# Check available MCP servers
+npx -y @anthropic-ai/claude-code-mcp list 2>/dev/null || true
 
-### Advanced Hooks
-1. `hooks/smart-router.sh` — Auto-detect task type, route to correct workflow
-2. `hooks/context-guardian.sh` — Monitor context window, auto-compact when needed
-3. `hooks/git-guardian.sh` — Auto-stage, block secrets, generate commit messages
+# Install key MCP servers via Claude Code's built-in mechanism
+# Research exact commands from SOTA sources
+```
 
-### Advanced Skills
-1. `skills/debug-detective.md` — Systematic debugging: Reproduce → Isolate → Fix → Immunize
-2. `skills/architect.md` — System design with ADR template
-3. `skills/code-review.md` — Multi-dimensional review checklist
-4. `skills/tdd.md` — Test-Driven Development cycle
-5. `skills/refactor.md` — Safe refactoring with characterization tests
+### 2B. Create MCP configurations
+Create/update `.claude/settings.json` to add `mcpServers` section with:
 
-### Advanced Subagents
-1. `subagents/architect.md` — System design specialist
-2. `subagents/debugger.md` — Bug hunting specialist
-3. `subagents/optimizer.md` — Performance specialist
-4. `subagents/security-auditor.md` — OWASP/CVE analysis
+1. **Filesystem MCP** — advanced file operations (glob, watch, search)
+2. **GitHub MCP** (if `gh` CLI is installed) — PRs, issues, reviews
+3. **Fetch/Browser MCP** — web page content fetching
+4. **Memory MCP** — persistent key-value knowledge store
 
-### New Commands
-1. `.claude/commands/bootstrap.md` — Project initialization wizard
-2. `.claude/commands/ship.md` — Production deployment prep
-3. `.claude/commands/research.md` — Deep web research mode
+For EACH MCP server:
+- Research the exact npm package and config format
+- Test that the server starts and responds
+- Wire permissions: `mcp__*` is already in allow list
 
----
-
-## PHASE 4 — SELF-HEALING INFRASTRUCTURE
-
-1. Create `hooks/error-recovery.sh` — Detect errors, log, auto-fix known patterns
-2. Create `hooks/session-state.sh` — Save/restore state across sessions
-3. Create `hooks/test-mythos.sh` — Self-test the entire Mythos system
+### 2C. Create MCP-aware skills
+Create `skills/mcp-orchestrator.md`:
+- When to use which MCP tool
+- Common workflows (PR review, issue triage, web research)
+- Error handling for MCP failures
 
 ---
 
-## PHASE 5 — WIRING
+## PHASE 3 — MULTI-AGENT TEAMS
 
-1. Update `.claude/settings.json` — Wire ALL new hooks
-2. Update `CLAUDE.md` — Reference all new capabilities
-3. Update `tasks/todo.md` — Log all changes
+### 3A. Create team orchestration command
+Create `.claude/commands/team.md`:
+- Accept a task description
+- Decompose into subtasks
+- Assign each subtask to a specialized agent via the Task tool
+- Collect results and merge
+- Verify the combined output
+
+### 3B. Create specialized agent profiles
+Create/upgrade agents in `.claude/agents/`:
+
+1. **`planner.md`** — Decomposes complex tasks into steps, creates implementation plans
+2. **`researcher.md`** — Deep web research, documentation reading, SOTA analysis
+3. **`implementer.md`** — Pure code implementation, follows plan from planner
+4. **`reviewer.md`** — Code review, catches bugs, suggests improvements
+5. **`tester.md`** — Writes and runs tests, coverage analysis
+
+Each agent MUST have:
+- YAML frontmatter with `name`, `description`, `tools`
+- A clear system prompt defining its role and constraints
+- Output format specification
+- Failure handling instructions
+
+### 3C. Create parallel execution patterns
+Create `skills/parallel-execution.md`:
+- When to parallelize vs serialize
+- How to split work across agents
+- How to merge agent outputs without conflicts
+- Conflict resolution when agents disagree
 
 ---
 
-## PHASE 6 — VERIFICATION
+## PHASE 4 — AUTO-EVALUATION LOOP
 
-1. Run `hooks/test-mythos.sh`
-2. Validate JSON configs
-3. Test each hook
-4. Log confidence score to `tasks/confidence-log.md`
+### 4A. Create benchmark runner
+Create `.claude/commands/benchmark.md`:
+- Clones N SWE-bench instances (configurable, default 5)
+- For each: checkout base commit, run `claude -p` with Mythos
+- Captures git diff (the patch)
+- Compares with gold patch (exact match = pass, semantic match = partial)
+- Reports score: X/N resolved
+- Extracts failure patterns → new lessons
+
+### 4B. Create self-evaluation hook
+Create `hooks/self-eval.sh`:
+- Runs on SessionEnd (optional, configurable)
+- Checks: did we learn anything? Did confidence improve? Any errors logged?
+- Appends evaluation metrics to `.claude/memory/eval-metrics.jsonl`
+
+### 4C. Create calibration command
+Upgrade `.claude/commands/calibrate.md`:
+- Reads confidence-log.md
+- Compares predicted confidence vs actual outcomes
+- Adjusts confidence scoring guidelines
+- Logs calibration delta
+
+### 4D. Create continuous improvement loop
+Create `skills/self-improve.md`:
+- Pattern: Run benchmark → Extract failures → Write lessons → Re-run benchmark → Measure delta
+- Success criterion: score improvement OR new lesson learned
+- Failure criterion: 3 consecutive runs with no improvement → escalate
 
 ---
 
-## PHASE 7 — META-EVOLUTION
+## PHASE 5 — ENHANCED INFRASTRUCTURE
 
-1. Update `.claude/memory/patterns.json` with this run's evolution entry (timestamp, summary, files touched, sources cited).
-2. Append a structured entry to `tasks/session-journal.md`, `tasks/confidence-log.md`, and `tasks/lessons.md` (only if real lessons were learned).
-3. Improve THIS `/evolve` command based on what worked / didn't (this section is itself an example).
-4. `git add -A && git commit` with descriptive message — NEVER `--no-verify`. Commit message must list created/modified counts and headline new capabilities.
+### 5A. Upgrade smart-router
+Update `hooks/smart-router.sh` to handle new capabilities:
+- Route MCP-related tasks to `mcp-orchestrator` skill
+- Route complex tasks to `team` command
+- Route evaluation requests to `benchmark` command
+- Detect multi-file changes → suggest parallel agents
 
-### Lessons baked into this version (do not repeat):
-- **Always run `hooks/test-mythos.sh` before committing.** A green self-test is the entry criterion for Phase 7.
-- **Validate every JSON config** with `python3 -c "import json; json.load(open(P))"` before wiring it.
-- **Behavior-test new hooks** with crafted stdin (e.g. `echo '{...}' | bash hooks/foo.sh; echo "exit=$?"`). Syntax check ≠ working hook.
-- **Layer guardrails** — encode critical invariants in BOTH `permissions.deny` AND a `PreToolUse` hook (defense-in-depth).
-- **CLAUDE.md ≤ 200 lines.** If you exceed this, move detail into skills/ or research-cache.md.
+### 5B. Create execution monitor
+Create `hooks/execution-monitor.sh`:
+- Track command execution time
+- Detect stuck agents (>5min on single task)
+- Auto-suggest recovery actions
+- Log performance metrics
+
+### 5C. Upgrade test-mythos.sh
+Add tests for:
+- MCP server connectivity (if configured)
+- Agent profile validity
+- New commands existence
+- Benchmark runner executable
+- Evaluation metrics file writable
+
+---
+
+## PHASE 6 — WIRING & INTEGRATION
+
+1. Update `.claude/settings.json`:
+   - Add MCP servers
+   - Wire new hooks
+   - **KEEP `Bash(*)` in allow — NEVER replace with scoped commands**
+   - Update env vars: `MYTHOS_VERSION=4.0`
+
+2. Update `CLAUDE.md`:
+   - Add MCP tools section
+   - Add multi-agent delegation patterns
+   - Add self-evaluation reference
+   - Stay under 200-line budget (move detail to skills/)
+
+3. Update `.claude/memory/patterns.json`:
+   - Add v4 evolution entry
+   - Record all new capabilities
+
+---
+
+## PHASE 7 — VERIFICATION & COMMIT
+
+1. Run `hooks/test-mythos.sh` — ALL must pass
+2. Validate ALL JSON configs
+3. Test each new hook with crafted stdin
+4. Test MCP connectivity (if servers configured)
+5. Log confidence to `tasks/confidence-log.md`
+6. `git add -A && git commit` — descriptive message
+
+### Lessons baked in (do NOT repeat):
+- **ALWAYS keep `Bash(*)` in permissions.allow.** Use deny for security.
+- **Validate JSON before wiring.** `python3 -c "import json; json.load(open(P))"`
+- **Behavior-test hooks** with crafted stdin.
+- **Layer guardrails** — deny + hook (defense-in-depth).
+- **CLAUDE.md ≤ 200 lines.** Move detail to skills/.
+- **Capture pre-compact state** before context compression.
+- **Never create hook files without also wiring them** in settings.json.
 
 ---
 
 ## OUTPUT FORMAT
 
-The ONLY output to the user should be the final summary:
 ```
-✅ EVOLUTION COMPLETE
+✅ EVOLUTION COMPLETE — Mythos v4.0
 Files: N created, M modified
-New capabilities: [brief list]
+New capabilities:
+  • MCP: [list of connected servers]
+  • Agents: [list of new/upgraded agents]
+  • Commands: [new commands]
+  • Self-eval: [benchmark capability status]
+Self-test: XX/XX ✅
 Confidence: XX/100
 ```
 
-Nothing else. No explanations. No narration. No commentary. JUST BUILD.
+Nothing else. No explanations. JUST BUILD.
 
 BEGIN NOW.
