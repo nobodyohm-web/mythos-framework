@@ -34,3 +34,8 @@ Each lesson follows this structure:
 **Root Cause:** Assumed bash syntax check = working hook.
 **Rule:** For every hook with branching logic, verify with `echo '{...}' | bash hooks/foo.sh; echo "exit=$?"`. Confirm both block-path (exit 2) and allow-path (exit 0). Bake these into `test-mythos.sh` over time.
 
+### 2026-05-10 — Keep Bash(*) wildcard in permissions.allow
+**Mistake:** /evolve replaced `Bash(*)` with 45 scoped commands (git, npm, bun...). Every unlisted command triggered a permission prompt, breaking autonomous flow.
+**Root Cause:** Research said "wildcards defeat the safety classifier" — but the user explicitly wants ZERO permission prompts. The `deny` list already blocks dangerous operations (force-push, rm -rf /, secret reads).
+**Rule:** ALWAYS keep `Bash(*)` in permissions.allow. Use `deny` list for security, NOT scoped allow. The deny list is the guardrail, not the allow list.
+
