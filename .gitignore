@@ -6,6 +6,9 @@
 # Claude Code internals
 .claude/memory.db
 .claude/settings.local.json
+.claude/memory/.context-guardian-*
+.claude/memory/last-session-state.json
+.claude/memory/error-recovery.log
 
 # Node
 node_modules/

@@ -32,3 +32,46 @@
 ---
 
 <!-- Session entries will be appended below this line -->
+
+## Evolution — 2026-05-10 15:49
+
+### Summary
+Frontier-research-driven rebuild of the Mythos system. Web-searched Anthropic docs + community 2026 best-practices, then compressed CLAUDE.md from 268 → 135 lines, added 5 dev skills, 4 dev subagents, 6 hooks, and 3 commands. Hardened `.claude/settings.json` with scoped Bash allowlist and force-push deny. All 54 self-test checks green.
+
+### Tasks Completed
+- [x] Phase 0 — Frontier research (3 web searches + 2 Anthropic doc fetches) — confidence: 92/100
+- [x] Phase 1 — System audit (full file inventory + reads) — confidence: 95/100
+- [x] Phase 2 — CLAUDE.md compression (268 → 135 lines) — confidence: 90/100
+- [x] Phase 3 — Build skills (5), subagents (4), commands (3) — confidence: 88/100
+- [x] Phase 4 — Self-healing infra (smart-router, context-guardian, git-guardian, error-recovery, session-state, test-mythos) — confidence: 90/100
+- [x] Phase 5 — Wire hooks in settings.json + harden permissions — confidence: 92/100
+- [x] Phase 6 — Verification (54/54 self-test pass; 5 individual hook tests pass) — confidence: 95/100
+- [x] Phase 7 — Update patterns.json + commit — confidence: 90/100
+
+### Key Decisions
+1. **CLAUDE.md compression**: removed redundant identity prose, mythos-loop ascii art, French verification block. Kept tables + decision matrices.
+   Rationale: Anthropic best-practices doc explicitly warns against bloated CLAUDE.md ("important rules get lost in the noise").
+2. **Skill paths kept at `skills/*.md` (not `.claude/skills/<name>/SKILL.md`)**: spec mandated flat layout; CLAUDE.md references via @skills/ globbing.
+   Rationale: project convention overrides general best-practice; harness still reads them.
+3. **Permission allowlist scoped per-command** instead of `Bash(*)`.
+   Rationale: wildcards defeat the auto-mode safety classifier.
+4. **Force-push to main/master added to deny list** (in addition to git-guardian PreToolUse).
+   Rationale: defense-in-depth — guard at both permission and hook layers.
+5. **Smart-router emits advisory hint, never blocks**.
+   Rationale: routing should suggest, not constrain — Claude's judgment beats keyword match.
+
+### Errors & Fixes
+None. All hooks executable on first try; JSON valid on first parse; self-test green on first run.
+
+### Lessons Learned
+1. **CLAUDE.md is a budget, not a wishlist** — every line must earn its place. Use `@imports` for detail.
+2. **Hooks beat prompts for invariants** — the more behavior you can encode in a hook, the less CLAUDE.md needs to say.
+3. **Test individual hooks with crafted inputs** — `echo '{...}' | bash hooks/foo.sh` validates behavior cheaply.
+
+### Evolution Recommendations
+- [ ] Add a `/diagnose` command that runs `test-mythos.sh` + tails error-recovery.log
+- [ ] Consider PostToolUse hook for auto-formatter (prettier/black) when language detected
+- [ ] Add MCP server hook examples for common services (Linear, GitHub, Slack)
+
+### Session Score: 47/50
+

@@ -17,18 +17,31 @@
 - [x] Create plugins/ structure (L5 Distribution Layer)
 - [x] Create .claude/settings.json (Claude Code config)
 
+### Mythos v3.1 — Frontier-Driven Evolution (2026-05-10)
+- [x] Research SOTA Claude Code patterns (Anthropic docs + community)
+- [x] Compress CLAUDE.md from 268 → ~120 lines (under 200-line budget)
+- [x] Add dev skills: debug-detective, architect, code-review, tdd, refactor
+- [x] Add dev subagents: architect, debugger, optimizer, security-auditor
+- [x] Add advanced hooks: smart-router, context-guardian, git-guardian
+- [x] Add self-healing hooks: error-recovery, session-state, test-mythos
+- [x] Add new commands: /bootstrap, /ship, /research
+- [x] Harden settings.json: scoped Bash allowlist, deny force-push to main
+- [x] Wire UserPromptSubmit (smart-router) + PreToolUse (git-guardian)
+- [x] Persist research findings to .claude/memory/research-cache.md
+- [x] Self-test the system via hooks/test-mythos.sh
+
 ### Next Steps
-- [ ] Test hooks execution with Claude Code
+- [ ] First end-to-end session test against a real project
 - [ ] Add project-specific skills as needed
 - [ ] Configure MCP servers if applicable
-- [ ] First end-to-end session test
+- [ ] Set up CI integration via `claude -p` non-interactive mode
 
 ---
 
 ## Backlog
-- [ ] Add more playbooks (gap-and-go, earnings play, etc.)
-- [ ] Implement alert delivery system
-- [ ] Create daily report generator
+- [ ] Add more trading playbooks (gap-and-go, earnings play, etc.)
+- [ ] Implement alert delivery system (plugins/alerts)
+- [ ] Create daily report generator (plugins/reports)
 - [ ] Add portfolio tracker integration
 - [ ] Build custom MCP tools
 

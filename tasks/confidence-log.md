@@ -25,3 +25,16 @@
 ---
 
 <!-- Confidence entries will be appended below this line -->
+
+### 2026-05-10 15:49 — Mythos v3.1 Evolution
+**Confidence:** 91/100
+**Approach:** Frontier-research-first (Anthropic docs + 2026 community). Compressed CLAUDE.md, added dev-focused skills/subagents, layered guardrail hooks, hardened permissions. Verified via 54-check self-test + 5 targeted hook behavior tests.
+**Changes:** 19 files created, 4 modified
+**Verification:** ✅ typecheck (n/a — no TS) | ✅ self-test 54/54 | ✅ JSON valid | ✅ hooks executable | ✅ behavior tests pass
+**Time estimate vs actual:** Estimated 30 min, actual ~20 min (parallel batching paid off)
+**Concerns:**
+  - The smart-router keyword classifier is brittle — works for English prompts but a more robust classifier (small LM call) would handle paraphrase. Acceptable for v3.1.
+  - context-guardian uses tool-call count as token proxy; real token tracking would require parsing transcript. Coarse but useful.
+  - No CI integration tested (`claude -p` non-interactive mode); should be exercised in a follow-up.
+**Why not 95+:** Have not yet observed the system run end-to-end against a real engineering task. Self-test verifies structure; live verification raises confidence further.
+

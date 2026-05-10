@@ -1,13 +1,45 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PreMarket.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" restore 2>/dev/null || true'",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/smart-router.sh\" 2>/dev/null || true",
+            "timeout": 3000
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/git-guardian.sh\" file",
+            "timeout": 3000
+          }
+        ]
+      },
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[MYTHOS] ✅'",
-            "timeout": 1000
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/git-guardian.sh\" bash",
+            "timeout": 3000
           }
         ]
       }
@@ -18,30 +50,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PostTrade.sh\" 2>/dev/null || true'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PostTrade.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null || true'",
             "timeout": 15000
           }
         ]
-      }
-    ],
-    "SessionStart": [
+      },
       {
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PreMarket.sh\" 2>/dev/null || true'",
-            "timeout": 15000
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null && bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/EndOfDay.sh\" 2>/dev/null || true'",
-            "timeout": 20000
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/error-recovery.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null || true'",
+            "timeout": 5000
           }
         ]
       }
@@ -51,8 +71,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/verify-completion.sh\" 2>/dev/null || true'",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/verify-completion.sh\" 2>/dev/null || true",
             "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" save 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/EndOfDay.sh\" 2>/dev/null || true'",
+            "timeout": 25000
           }
         ]
       }
@@ -60,39 +91,78 @@
   },
   "permissions": {
     "allow": [
-      "Bash(*)",
       "Read(*)",
       "Write(*)",
       "Edit(*)",
       "MultiEdit(*)",
       "WebFetch(*)",
+      "WebSearch",
       "mcp__*",
-      "Bash(git *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git stash*)",
+      "Bash(git restore*)",
+      "Bash(git checkout*)",
+      "Bash(git pull*)",
+      "Bash(git fetch*)",
+      "Bash(git rebase*)",
+      "Bash(git merge*)",
       "Bash(npm *)",
       "Bash(npx *)",
       "Bash(bun *)",
+      "Bash(node *)",
+      "Bash(python*)",
+      "Bash(pytest*)",
+      "Bash(cargo *)",
       "Bash(curl *)",
       "Bash(chmod *)",
       "Bash(mkdir *)",
       "Bash(cp *)",
       "Bash(mv *)",
       "Bash(cat *)",
+      "Bash(ls *)",
       "Bash(find *)",
       "Bash(grep *)",
+      "Bash(rg *)",
       "Bash(sed *)",
       "Bash(awk *)",
-      "Bash(python*)",
-      "Bash(node *)",
-      "Bash(cargo *)"
+      "Bash(echo *)",
+      "Bash(tail *)",
+      "Bash(head *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(jq *)",
+      "Bash(test *)",
+      "Bash(which *)",
+      "Bash(command *)",
+      "Bash(./hooks/*)",
+      "Bash(bash hooks/*)",
+      "Bash(bash ./hooks/*)"
     ],
     "deny": [
       "Read(./.env)",
-      "Read(./.env.*)"
+      "Read(./.env.*)",
+      "Read(**/secrets/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Bash(git push --force *main*)",
+      "Bash(git push --force *master*)",
+      "Bash(git push -f *main*)",
+      "Bash(git push -f *master*)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf $HOME*)"
     ]
   },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "MYTHOS_MODE": "enabled",
-    "MYTHOS_AUTO_APPROVE": "true"
+    "MYTHOS_AUTO_APPROVE": "true",
+    "MYTHOS_VERSION": "3.1"
   }
 }

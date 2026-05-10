@@ -1,15 +1,39 @@
 {
-  "version": "1.0.0",
-  "lastEvolution": null,
+  "version": "3.1.0",
+  "lastEvolution": "2026-05-10T15:49:43+02:00",
   "sessionsCompleted": 1,
   "totalTasks": 0,
   "averageConfidence": null,
   "confidenceTrend": "new",
   "rulesAdded": 0,
-  "skillsCreated": 3,
+  "skillsCreated": 8,
+  "subagentsCreated": 7,
+  "hooksCreated": 11,
+  "commandsCreated": 9,
   "topMistakes": [],
-  "topStrengths": [],
-  "evolutionHistory": [],
+  "topStrengths": [
+    "Layered L1-L5 architecture",
+    "Self-improvement loop with lessons.md",
+    "Confidence scoring discipline",
+    "Dedicated /heal /evolve /reflect workflows"
+  ],
+  "evolutionHistory": [
+    {
+      "timestamp": "2026-05-10T15:49:43+02:00",
+      "version": "3.1",
+      "summary": "Frontier-research-driven rebuild. CLAUDE.md compressed from 268 → ~120 lines. Added 5 dev skills (debug-detective, architect, code-review, tdd, refactor). Added 4 dev subagents (architect, debugger, optimizer, security-auditor). Added 6 hooks (smart-router, context-guardian, git-guardian, error-recovery, session-state, test-mythos). Added 3 commands (/bootstrap, /ship, /research). Hardened settings.json: scoped Bash allowlist, hard deny on force-push to main, secret-file read deny. Wired UserPromptSubmit + PreToolUse guardrails.",
+      "filesCreated": 19,
+      "filesModified": 4,
+      "researchSources": [
+        "https://code.claude.com/docs/en/best-practices",
+        "https://code.claude.com/docs/en/skills",
+        "https://www.sitepoint.com/claude-code-as-an-autonomous-agent-advanced-workflows-2026/",
+        "https://smartscope.blog/en/generative-ai/claude/claude-code-best-practices-advanced-2026/",
+        "https://alexop.dev/posts/claude-code-customization-guide-claudemd-skills-subagents/",
+        "https://azure.microsoft.com/en-us/blog/agent-factory-the-new-era-of-agentic-ai-common-use-cases-and-design-patterns/"
+      ]
+    }
+  ],
   "calibration": {
     "overconfidentCount": 0,
     "underconfidentCount": 0,

@@ -117,9 +117,17 @@ Create ALL of these. No stubs. No placeholders. Production-grade code only:
 
 ## PHASE 7 — META-EVOLUTION
 
-1. Update `.claude/memory/patterns.json`
-2. Improve THIS `/evolve` command based on what worked/didn't
-3. `git add -A && git commit` with descriptive message
+1. Update `.claude/memory/patterns.json` with this run's evolution entry (timestamp, summary, files touched, sources cited).
+2. Append a structured entry to `tasks/session-journal.md`, `tasks/confidence-log.md`, and `tasks/lessons.md` (only if real lessons were learned).
+3. Improve THIS `/evolve` command based on what worked / didn't (this section is itself an example).
+4. `git add -A && git commit` with descriptive message — NEVER `--no-verify`. Commit message must list created/modified counts and headline new capabilities.
+
+### Lessons baked into this version (do not repeat):
+- **Always run `hooks/test-mythos.sh` before committing.** A green self-test is the entry criterion for Phase 7.
+- **Validate every JSON config** with `python3 -c "import json; json.load(open(P))"` before wiring it.
+- **Behavior-test new hooks** with crafted stdin (e.g. `echo '{...}' | bash hooks/foo.sh; echo "exit=$?"`). Syntax check ≠ working hook.
+- **Layer guardrails** — encode critical invariants in BOTH `permissions.deny` AND a `PreToolUse` hook (defense-in-depth).
+- **CLAUDE.md ≤ 200 lines.** If you exceed this, move detail into skills/ or research-cache.md.
 
 ---
 
