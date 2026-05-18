@@ -79,6 +79,7 @@ Every claim, design decision, or finding must fall into a tier. Do not inflate c
 | `bin/mythos-gvu` | Generator-Verifier-Updater triad orchestrator (arXiv:2512.02731). |
 | `bin/mythos-tot` | Tree-of-Thoughts state CLI (`init/expand/score/best/show`). |
 | `/mythosrun [task]` | Full autonomous loop (research → plan → execute → verify → learn) |
+| `/assimilate` | Run this when injected into a new repo. Agent scans the host, researches its domain, and adapts. |
 | `/deep-evolve` | The Ultimate Self-Improvement Loop. Unleash the monster. |
 | `/evolve` | Standard self-improvement cycle (research SOTA, rebuild infrastructure) |
 | `/team [task]` | Decompose + dispatch across planner/researcher/implementer/reviewer/tester |

@@ -56,6 +56,12 @@ Analyze all code for security vulnerabilities:
 4. **Graceful Degradation**: Partial results vs complete failure?
 5. **Recovery**: Can the system recover from a crash without data loss?
 
+### DIMENSION 5 — EPISTEMIC AUDIT
+1. **Unproven Assumptions**: Are there hardcoded assumptions lacking validation?
+2. **Missing Tests**: Are there complex code blocks without associated empirical tests?
+3. **Overconfidence**: Are errors swallowed silently? Are edge-cases waved away?
+4. **Validation Logic**: Does the system actually verify inputs/outputs or just trust them?
+
 ## Output Format
 ```
 ═══════════════════════════════════════════════
@@ -68,6 +74,7 @@ Analyze all code for security vulnerabilities:
   Quality:      [SCORE/100] — [X issues found]
   Architecture: [SCORE/100] — [X recommendations]
   Resilience:   [SCORE/100] — [X gaps identified]
+  Epistemic:    [SCORE/100] — [X unproven assumptions]
   
   OVERALL:      [SCORE/100] — [GRADE: A/B/C/D/F]
 

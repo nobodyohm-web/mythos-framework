@@ -10,11 +10,11 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 echo "── 🧠 Mythos Auto-Learn ──"
 
 # 1. Count session metrics
-LESSONS=$(grep -c "^### " "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || echo "0")
-CONFIDENCE_ENTRIES=$(grep -c "^\*\*Confidence:\*\*" "$PROJECT_DIR/tasks/confidence-log.md" 2>/dev/null || echo "0")
-JOURNAL_ENTRIES=$(grep -c "^## Session" "$PROJECT_DIR/tasks/session-journal.md" 2>/dev/null || echo "0")
-PENDING_TASKS=$(grep -c "^\- \[ \]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
-DONE_TASKS=$(grep -c "^\- \[x\]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
+LESSONS=$(grep -c "^### " "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || true)
+CONFIDENCE_ENTRIES=$(grep -c "^\*\*Confidence:\*\*" "$PROJECT_DIR/tasks/confidence-log.md" 2>/dev/null || true)
+JOURNAL_ENTRIES=$(grep -c "^## Session" "$PROJECT_DIR/tasks/session-journal.md" 2>/dev/null || true)
+PENDING_TASKS=$(grep -c "^\- \[ \]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
+DONE_TASKS=$(grep -c "^\- \[x\]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
 
 echo "  📚 Total lessons: $LESSONS"
 echo "  📊 Confidence entries: $CONFIDENCE_ENTRIES"

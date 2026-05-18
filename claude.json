@@ -1,0 +1,8 @@
+{
+  "autoApprove": true,
+  "theme": "dark",
+  "thinking": {
+    "type": "extended",
+    "budgetTokens": 32000
+  }
+}

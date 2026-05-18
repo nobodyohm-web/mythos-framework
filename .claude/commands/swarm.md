@@ -1,23 +1,36 @@
-# /swarm — Multi-Agent Team Orchestration
+# /swarm — DAG-Aware Multi-Agent Orchestration (v5.0)
 
-You are entering **SWARM MODE** — deploy a coordinated team of specialist agents.
+You are entering **SWARM MODE** — deploy a coordinated team of specialist agents with **dependency-aware scheduling**.
 
 ## Task
 Decompose and execute: `$ARGUMENTS`
 
 ## Protocol
 
-### STEP 1 — Task Decomposition
-Break the task into independent, parallelizable subtasks:
+### STEP 1 — Load or Create Task DAG
 
-1. Analyze the task for natural boundaries (files, modules, concerns)
-2. Identify dependencies between subtasks (what must finish before what)
-3. Create a task dependency graph:
+1. Check if `specs/*/tasks.md` exists for this task
+   - If yes → load the task DAG with `[P]` markers and `depends_on` declarations
+   - If no → decompose the task into a DAG:
+2. Analyze the task for natural boundaries (files, modules, concerns)
+3. Identify dependencies between subtasks (what must finish before what)
+4. Write the task DAG in standard format:
+   ```markdown
+   ## Phase 1: [Phase Name]
+   - [ ] Task 1.1: [Description] [P]  ← parallelizable
+   - [ ] Task 1.2: [Description] [P]  ← parallelizable  
+   - [ ] Task 1.3: [Description]
+     - depends_on: [1.1, 1.2]        ← waits for both
+   
+   ## Checkpoint: [Validation Gate]
+     - depends_on: [1.3]
+   
+   ## Phase 2: [Phase Name]
+   - [ ] Task 2.1: [Description] [P]
+     - depends_on: [checkpoint-1]
    ```
-   Task A (no deps) ──┐
-   Task B (no deps) ──┤── Task D (depends on A, B)
-   Task C (no deps) ──┘
-   ```
+5. `[P]` = safe for parallel subagent execution
+6. Tasks without `[P]` are sequential within their phase
 
 ### STEP 2 — Agent Assignment
 Assign each subtask to the best-fit agent role:
@@ -31,25 +44,31 @@ Assign each subtask to the best-fit agent role:
 | 🔒 **Auditor** | Security review, vulnerability analysis | Security checks |
 | 📝 **Documenter** | README, API docs, code comments | Documentation |
 
-### STEP 3 — Parallel Execution
-For each wave of independent tasks:
+### STEP 3 — DAG-Ordered Execution
+For each wave (group of `[P]` tasks whose dependencies are ALL satisfied):
 
-1. **Spawn subagents** for each independent task in the wave
-2. Each subagent receives:
+1. **Identify the frontier** — all `[P]` tasks whose `depends_on` are complete
+2. **Spawn subagents** for each frontier task, **in parallel**
+3. Each subagent receives:
    - Its specific task description
-   - Relevant file context
-   - The coding standards from CLAUDE.md
+   - Relevant file context  
+   - The `constitution.md` principles
    - The specific role instructions
-3. Subagents work independently — no cross-talk during execution
-4. Lead agent (you) coordinates and monitors progress
+   - **Babel Protocol:** ALL claims in the prompt must be tagged with Epistemic Tiers ([E], [D], [C], [S]). Do not pass assumptions as facts.
+4. Subagents work independently — no cross-talk during execution
+5. Lead agent (you) coordinates and monitors progress
+6. **Mark completed tasks** in the DAG as `[x]`
 
-### STEP 4 — Integration
+### STEP 4 — Checkpoint Validation
 After each wave completes:
 
 1. **Review** all subagent outputs for consistency
-2. **Resolve conflicts** if multiple agents modified overlapping areas
-3. **Run verification**: typecheck + tests + lint
-4. **Proceed to next wave** or report completion
+2. **Check Epistemic Returns:** Subagents must return their confidence. Reject or manually verify any `[C]` (Conjectured) or `[S]` (Speculative) returns.
+3. **Resolve conflicts** if multiple agents modified overlapping areas
+3. **Run checkpoint verification**: typecheck + tests + lint
+4. If a **Checkpoint** exists in the DAG → run its validation criteria
+5. **Update the DAG** — mark wave tasks as `[x]`, advance to next frontier
+6. **Proceed to next wave** or report completion
 
 ### STEP 5 — Synthesis
 1. Merge all results into a coherent whole

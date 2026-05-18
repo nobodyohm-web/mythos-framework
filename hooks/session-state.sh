@@ -27,12 +27,12 @@ save_state() {
 
   local PENDING=0; local DONE_COUNT=0
   if [ -f "$PROJECT_DIR/tasks/todo.md" ]; then
-    PENDING=$(grep -c '^\- \[ \]' "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
-    DONE_COUNT=$(grep -c '^\- \[x\]' "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
+    PENDING=$(grep -c '^\- \[ \]' "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
+    DONE_COUNT=$(grep -c '^\- \[x\]' "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
   fi
 
   local LESSONS=0
-  [ -f "$PROJECT_DIR/tasks/lessons.md" ] && LESSONS=$(grep -c '^### ' "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || echo "0")
+  [ -f "$PROJECT_DIR/tasks/lessons.md" ] && LESSONS=$(grep -c '^### ' "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || true)
 
   cat > "$SNAPSHOT" <<EOF
 {

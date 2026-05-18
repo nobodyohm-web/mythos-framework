@@ -24,8 +24,8 @@ fi
 
 PENDING=0; DONE_C=0
 if [ -f "$PROJECT_DIR/tasks/todo.md" ]; then
-  PENDING=$(grep -c '^\- \[ \]' "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
-  DONE_C=$(grep -c '^\- \[x\]' "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
+  PENDING=$(grep -c '^\- \[ \]' "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
+  DONE_C=$(grep -c '^\- \[x\]' "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
 fi
 
 LAST_LESSON=$(grep '^### ' "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null | tail -1)

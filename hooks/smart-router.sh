@@ -54,12 +54,10 @@ case "$LC" in
     ROUTE="MCP"; SKILL="skills/mcp-orchestrator.md" ;;
   *"research"*|*"sota"*|*"state of the art"*|*"deep dive on"*|*"compare libraries"*)
     ROUTE="RESEARCH"; AGENT="researcher" ;;
-  *"breakout"*|*"momentum"*|*"new high"*|*"volume surge"*)
-    ROUTE="TRADE_BREAKOUT"; SKILL="skills/breakout.md" ;;
-  *"pullback"*|*"dip"*|*"support bounce"*)
-    ROUTE="TRADE_PULLBACK"; SKILL="skills/pullback.md" ;;
-  *"reversion"*|*"oversold"*|*"overbought"*|*"fade"*|*"rsi divergence"*)
-    ROUTE="TRADE_MEAN_REV"; SKILL="skills/mean-reversion.md" ;;
+  *"critique"*|*"review plan"*|*"adversarial"*|*"check my assumptions"*)
+    ROUTE="CRITIQUE"; SKILL="skills/epistemic-rigor.md"; AGENT="reviewer" ;;
+  *"epistemic"*|*"hallucination"*|*"truth"*|*"verify source"*)
+    ROUTE="EPISTEMIC"; SKILL="skills/epistemic-rigor.md" ;;
 esac
 
 # Multi-file change hint: if prompt mentions ≥3 files explicitly, suggest /team.

@@ -1,0 +1,6 @@
+{
+  "id": "case-001",
+  "name": "SQL Injection & Path Traversal Fix",
+  "problem_statement": "The API server at benchmark/vulnerable-app/server.js has critical security vulnerabilities. Fix the SQL Injection on the login endpoint (lines ~37-55) and the Path Traversal on the files endpoint (lines ~106-118). Use parameterized queries to fix the SQLi, and path validation to fix the traversal. Return ONLY the code changes.",
+  "golden_diff": "diff --git a/benchmark/vulnerable-app/server.js b/benchmark/vulnerable-app/server.js\n--- a/benchmark/vulnerable-app/server.js\n+++ b/benchmark/vulnerable-app/server.js\n@@ -37,5 +37,5 @@\n   const { username, password } = req.body;\n-  const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;\n+  const query = 'SELECT * FROM users WHERE username = ? AND password = ?';\n   try {\n-    const user = db.prepare(query).get();\n+    const user = db.prepare(query).get(username, password);\n     if (user) {\n@@ -107,3 +107,6 @@\n   const filename = req.params.filename;\n+  if (filename.includes('..') || filename.includes('/')) {\n+    return res.status(400).json({ error: 'Invalid filename' });\n+  }\n   const filepath = path.join(__dirname, 'uploads', filename);"
+}

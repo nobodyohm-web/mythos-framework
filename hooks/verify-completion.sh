@@ -49,13 +49,13 @@ fi
 
 # 4. Check if lessons were captured (if corrections happened)
 if [ -f "$PROJECT_DIR/tasks/lessons.md" ]; then
-  LESSON_COUNT=$(grep -c "^### " "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || echo "0")
+  LESSON_COUNT=$(grep -c "^### " "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || true)
   echo "  📚 Lessons captured: $LESSON_COUNT"
 fi
 
 # 5. Check if confidence was logged
 if [ -f "$PROJECT_DIR/tasks/confidence-log.md" ]; then
-  CONF_COUNT=$(grep -c "^\*\*Confidence:\*\*" "$PROJECT_DIR/tasks/confidence-log.md" 2>/dev/null || echo "0")
+  CONF_COUNT=$(grep -c "^\*\*Confidence:\*\*" "$PROJECT_DIR/tasks/confidence-log.md" 2>/dev/null || true)
   echo "  📊 Confidence entries: $CONF_COUNT"
 fi
 

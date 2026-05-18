@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hook: PreMarket — Load context at session start.
+# Hook: session-start — Load context at session start.
 # Triggered by SessionStart in .claude/settings.json.
 
 set -euo pipefail
@@ -7,13 +7,13 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "═══════════════════════════════════════════"
-echo "  🌅 PRE-MARKET — Context Loader"
+echo "  🌅 SESSION START — Context Loader"
 echo "  $(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "═══════════════════════════════════════════"
 
 # 1. Review lessons learned
 if [ -f "$PROJECT_DIR/tasks/lessons.md" ]; then
-  LESSON_COUNT=$(grep -c "^### " "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || echo "0")
+  LESSON_COUNT=$(grep -c "^### " "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || true)
   echo "📚 Lessons learned: $LESSON_COUNT entries — REVIEW BEFORE CODING"
   if [ "$LESSON_COUNT" -gt 0 ]; then
     echo "   Last lesson:"
@@ -23,8 +23,8 @@ fi
 
 # 2. Pending tasks
 if [ -f "$PROJECT_DIR/tasks/todo.md" ]; then
-  PENDING=$(grep -c "^\- \[ \]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
-  DONE=$(grep -c "^\- \[x\]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
+  PENDING=$(grep -c "^\- \[ \]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
+  DONE=$(grep -c "^\- \[x\]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
   echo "📋 Tasks: $PENDING pending, $DONE completed"
 fi
 
@@ -72,5 +72,5 @@ if command -v node &>/dev/null; then
 fi
 
 echo "═══════════════════════════════════════════"
-echo "  ✅ Pre-market context loaded. Ready to trade."
+echo "  ✅ Session start context loaded. Ready to execute."
 echo "═══════════════════════════════════════════"

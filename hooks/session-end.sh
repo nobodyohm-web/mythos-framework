@@ -1,14 +1,13 @@
 #!/bin/bash
-# Hook: EndOfDay — Save state before closing the session
+# Hook: session-end — Save state before closing the session
 # L3 Guardrail Layer — runs at session end
-# Maps to: the-trading-dev-kit/hooks/EndOfDay.sh
 
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "═══════════════════════════════════════════"
-echo "  🌙 END OF DAY — State Save"
+echo "  🛑 SESSION END — State Save"
 echo "  $(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "═══════════════════════════════════════════"
 
@@ -55,14 +54,14 @@ fi
 
 # 4. Task summary
 if [ -f "$PROJECT_DIR/tasks/todo.md" ]; then
-  PENDING=$(grep -c "^\- \[ \]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
-  DONE=$(grep -c "^\- \[x\]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || echo "0")
+  PENDING=$(grep -c "^\- \[ \]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
+  DONE=$(grep -c "^\- \[x\]" "$PROJECT_DIR/tasks/todo.md" 2>/dev/null || true)
   echo "📋 Tasks: $DONE completed, $PENDING remaining"
 fi
 
 # 5. Lessons summary
 if [ -f "$PROJECT_DIR/tasks/lessons.md" ]; then
-  LESSON_COUNT=$(grep -c "^### " "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || echo "0")
+  LESSON_COUNT=$(grep -c "^### " "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || true)
   echo "📚 Total lessons captured: $LESSON_COUNT"
 fi
 
@@ -76,5 +75,5 @@ fi
 
 echo "═══════════════════════════════════════════"
 echo "  Session ended: $(date '+%Y-%m-%d %H:%M:%S')"
-echo "  State saved. See you tomorrow. 🌙"
+echo "  State saved. System halting. 🛑"
 echo "═══════════════════════════════════════════"
