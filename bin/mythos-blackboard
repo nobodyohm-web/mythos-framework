@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# mythos-blackboard — durable, file-backed inter-agent state.
+#
+# Subcommands:
+#   write  <topic> <json|->            # `-` reads JSON from stdin
+#   read   <topic>                     # prints latest entry as JSON
+#   list   [--all]                     # list topic names (or all entries)
+#   tail   <topic> [--n N]             # last N entries (default 5)
+#   clear  <topic>                     # remove a topic file
+#
+# Storage layout:
+#   .claude/state/blackboard/<topic>.jsonl   (one JSON object per line)
+#
+# Each line is:
+#   {"ts":"...","agent":"...","topic":"...","tier":"E|D|C|S","payload":{...}}
+#
+# Concurrency: writes serialize via mythos_lock_acquire (atomic-mkdir lock).
+# Tier defaults to "C" (Conjectured) if not supplied via --tier; agent
+# defaults to $MYTHOS_AGENT or "main".
+set -uo pipefail
+
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+BB_DIR="$PROJECT_DIR/.claude/state/blackboard"
+mkdir -p "$BB_DIR"
+
+# Source shared lib for lock primitives.
+. "$PROJECT_DIR/hooks/_lib.sh"
+
+usage() {
+  sed -n '2,15p' "$0" >&2
+  exit 64
+}
+
+ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+agent() { printf '%s' "${MYTHOS_AGENT:-main}"; }
+
+# Validate topic: alnum, dash, underscore, dot only; length ≤ 64.
+validate_topic() {
+  local t="$1"
+  case "$t" in
+    ""|*[!A-Za-z0-9._-]*) echo "❌ invalid topic name (chars): $t" >&2; exit 64 ;;
+  esac
+  if [ "${#t}" -gt 64 ]; then
+    echo "❌ invalid topic name (length > 64): $t" >&2
+    exit 64
+  fi
+}
+
+# Pull --tier=X off args; default C.
+TIER="C"
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --tier=E|--tier=D|--tier=C|--tier=S) TIER="${a#--tier=}" ;;
+    --tier=*) echo "❌ tier must be one of E,D,C,S" >&2; exit 64 ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+set -- "${ARGS[@]}"
+
+cmd="${1:-}"; shift || true
+
+case "$cmd" in
+  write)
+    topic="${1:-}"; shift || true
+    payload="${1:-}"; shift || true
+    [ -z "$topic" ] && usage
+    validate_topic "$topic"
+    if [ -z "$payload" ] || [ "$payload" = "-" ]; then
+      payload="$(cat)"
+    fi
+    # Validate payload is JSON (object or array). Require either jq or python3.
+    if command -v jq >/dev/null 2>&1; then
+      printf '%s' "$payload" | jq -e . >/dev/null 2>&1 \
+        || { echo "❌ payload is not valid JSON" >&2; exit 65; }
+    elif command -v python3 >/dev/null 2>&1; then
+      printf '%s' "$payload" | python3 -c "import json,sys; json.loads(sys.stdin.read())" 2>/dev/null \
+        || { echo "❌ payload is not valid JSON" >&2; exit 65; }
+    else
+      echo "❌ need jq or python3 to validate JSON payload" >&2; exit 65
+    fi
+    file="$BB_DIR/$topic.jsonl"
+
+    # Acquire write lock (per-topic). Times out after 5s.
+    if ! mythos_lock_acquire "bb-$topic" 5000; then
+      echo "❌ could not acquire lock for $topic (busy)" >&2
+      exit 75
+    fi
+    trap 'mythos_lock_release "bb-'"$topic"'"' EXIT
+
+    # Atomic append under the lock. POSIX O_APPEND keeps the line intact even
+    # if another process appends concurrently (which the lock prevents anyway).
+    if command -v jq >/dev/null 2>&1; then
+      if ! jq -nc --arg ts "$(ts)" --arg ag "$(agent)" --arg t "$topic" --arg tier "$TIER" \
+           --argjson p "$payload" \
+           '{ts:$ts,agent:$ag,topic:$t,tier:$tier,payload:$p}' >> "$file"; then
+        echo "❌ failed to append to $file" >&2
+        mythos_lock_release "bb-$topic"
+        exit 73
+      fi
+    else
+      if ! printf '{"ts":"%s","agent":"%s","topic":"%s","tier":"%s","payload":%s}\n' \
+           "$(ts)" "$(agent)" "$topic" "$TIER" "$payload" >> "$file"; then
+        echo "❌ failed to append to $file" >&2
+        mythos_lock_release "bb-$topic"
+        exit 73
+      fi
+    fi
+    mythos_lock_release "bb-$topic"
+    trap - EXIT
+    echo "✓ wrote $topic (tier=$TIER)"
+    ;;
+
+  read)
+    topic="${1:-}"
+    [ -z "$topic" ] && usage
+    validate_topic "$topic"
+    file="$BB_DIR/$topic.jsonl"
+    [ -f "$file" ] || { echo "❌ no such topic: $topic" >&2; exit 1; }
+    tail -1 "$file"
+    ;;
+
+  tail)
+    topic="${1:-}"; shift || true
+    n=5
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --n) n="$2"; shift 2 ;;
+        --n=*) n="${1#--n=}"; shift ;;
+        *) shift ;;
+      esac
+    done
+    [ -z "$topic" ] && usage
+    validate_topic "$topic"
+    file="$BB_DIR/$topic.jsonl"
+    [ -f "$file" ] || { echo "❌ no such topic: $topic" >&2; exit 1; }
+    tail -n "$n" "$file"
+    ;;
+
+  list)
+    if [ "${1:-}" = "--all" ]; then
+      for f in "$BB_DIR"/*.jsonl; do
+        [ -f "$f" ] || continue
+        echo "── $(basename "$f" .jsonl) ──"
+        cat "$f"
+      done
+    else
+      # Use shell glob, not `ls`, so newlines in filenames don't break us
+      # (validate_topic already prevents those, but defense-in-depth).
+      for f in "$BB_DIR"/*.jsonl; do
+        [ -f "$f" ] || continue
+        b="${f##*/}"; b="${b%.jsonl}"
+        [ -n "$b" ] && printf '%s\n' "$b"
+      done
+    fi
+    ;;
+
+  clear)
+    topic="${1:-}"
+    [ -z "$topic" ] && usage
+    validate_topic "$topic"
+    if ! mythos_lock_acquire "bb-$topic" 5000; then
+      echo "❌ could not acquire lock for $topic (busy)" >&2
+      exit 75
+    fi
+    rm -f "$BB_DIR/$topic.jsonl"
+    mythos_lock_release "bb-$topic"
+    echo "✓ cleared $topic"
+    ;;
+
+  ""|-h|--help|help)
+    usage
+    ;;
+  *)
+    echo "❌ unknown subcommand: $cmd" >&2
+    usage
+    ;;
+esac

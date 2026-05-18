@@ -42,11 +42,11 @@ done
 
 # ─── 2. Hooks: present & executable ───────────────────────────────────────────
 section "Hooks"
-HOOKS=(_lib.sh PreMarket.sh PostTrade.sh EndOfDay.sh \
+HOOKS=(_lib.sh session-start.sh session-end.sh \
        smart-router.sh git-guardian.sh context-guardian.sh error-recovery.sh \
        session-state.sh observability.sh precompact-snapshot.sh subagent-tracker.sh \
        notification-handler.sh verify-completion.sh auto-learn.sh test-mythos.sh \
-       self-eval.sh execution-monitor.sh)
+       self-eval.sh execution-monitor.sh agent-guard.sh)
 for h in "${HOOKS[@]}"; do
   [ -f "$P/hooks/$h" ]; check "file:  hooks/$h" $?
 done
@@ -64,7 +64,7 @@ check "patterns.json parses"               $?
 # settings.json must wire every hook the lifecycle declares.
 for h in smart-router git-guardian context-guardian error-recovery \
          session-state observability precompact-snapshot subagent-tracker \
-         notification-handler verify-completion auto-learn PreMarket PostTrade EndOfDay \
+         notification-handler verify-completion auto-learn session-start session-end \
          self-eval execution-monitor
 do
   grep -q "$h.sh" "$P/.claude/settings.json"
@@ -83,9 +83,13 @@ check "settings.json declares filesystem + memory MCP servers" $?
 python3 -c "
 import json,sys
 d = json.load(open('$P/.claude/settings.json'))
-sys.exit(0 if d.get('env',{}).get('MYTHOS_VERSION','').startswith('4') else 1)
+sys.exit(0 if d.get('env',{}).get('MYTHOS_VERSION','').startswith('5') else 1)
 " 2>/dev/null
-check "MYTHOS_VERSION is 4.x"               $?
+check "MYTHOS_VERSION is 5.x"               $?
+
+# v5.1: settings.json must wire agent-guard.sh into PostToolUse Bash chain.
+grep -q 'agent-guard.sh' "$P/.claude/settings.json"
+check "settings.json wires agent-guard.sh"  $?
 
 # ─── 4. CLAUDE.md size budget ─────────────────────────────────────────────────
 section "CLAUDE.md budget"
@@ -250,6 +254,130 @@ check "execution-monitor accepts duration_ms (no crash)" $?
 echo '{"tool_name":"Bash","tool_input":{"command":"sleep 7"},"duration_ms":7000}' \
   | bash "$P/hooks/execution-monitor.sh" >/dev/null 2>&1
 check "execution-monitor logs >5s commands (no crash)" $?
+
+# ─── 7b. v5.1 — agent-guard loop detector ─────────────────────────────────────
+section "Behavior: agent-guard"
+
+# Reset ring buffer in a sandbox dir to avoid polluting real state.
+SANDBOX_RING="$P/.claude/memory/exec-ring.jsonl"
+SANDBOX_BAK=""
+[ -f "$SANDBOX_RING" ] && SANDBOX_BAK="$(mktemp)" && cp "$SANDBOX_RING" "$SANDBOX_BAK"
+: > "$SANDBOX_RING"
+
+# 7b.1 Single call: should write a row, exit 0, no warning.
+out=$(echo '{"tool_name":"Bash","tool_input":{"command":"echo test-once"}}' \
+  | bash "$P/hooks/agent-guard.sh" 2>&1)
+[ $? -eq 0 ] && echo "$out" | grep -vq 'agent-guard:'
+check "agent-guard single call is silent"   $?
+[ -s "$SANDBOX_RING" ]
+check "agent-guard writes ring entry"       $?
+
+# 7b.2 Three repeats: third call MUST emit warning + JSON hookSpecificOutput.
+: > "$SANDBOX_RING"
+for _ in 1 2 3; do
+  echo '{"tool_name":"Bash","tool_input":{"command":"echo loopy"}}' \
+    | bash "$P/hooks/agent-guard.sh" >/dev/null 2>/tmp/mythos_agent_guard_err.$$
+done
+grep -q 'probable loop' /tmp/mythos_agent_guard_err.$$
+check "agent-guard warns on 3× repeat (stderr)" $?
+echo '{"tool_name":"Bash","tool_input":{"command":"echo loopy"}}' \
+  | bash "$P/hooks/agent-guard.sh" 2>/dev/null | grep -q '"hookSpecificOutput"'
+check "agent-guard emits hookSpecificOutput JSON" $?
+
+# 7b.3 Non-Bash tool input must NOT write to the ring.
+: > "$SANDBOX_RING"
+echo '{"tool_name":"Read","tool_input":{"file_path":"/x"}}' \
+  | bash "$P/hooks/agent-guard.sh" >/dev/null 2>&1
+[ ! -s "$SANDBOX_RING" ]
+check "agent-guard ignores non-Bash tools"  $?
+
+# Restore previous ring if any.
+if [ -n "$SANDBOX_BAK" ] && [ -f "$SANDBOX_BAK" ]; then
+  cp "$SANDBOX_BAK" "$SANDBOX_RING" 2>/dev/null || true
+  rm -f "$SANDBOX_BAK"
+fi
+rm -f /tmp/mythos_agent_guard_err.$$ 2>/dev/null
+
+# ─── 7c. v5.1 — bin/ CLIs ─────────────────────────────────────────────────────
+section "v5.1 CLIs"
+for c in mythos-research mythos-reflect mythos-calibrate mythos-blackboard \
+         mythos-observe mythos-epistemic-check; do
+  [ -x "$P/bin/$c" ]; check "executable: bin/$c" $?
+done
+
+# Calibrate must run on empty input and return valid JSON with n=0.
+"$P/bin/mythos-calibrate" --quiet 2>/dev/null
+check "calibrate runs without error"        $?
+python3 -c "import json; d=json.load(open('$P/.claude/memory/calibration.json')); import sys; sys.exit(0 if 'n' in d else 1)" 2>/dev/null
+check "calibration.json shape is valid"     $?
+
+# Blackboard write+read roundtrip.
+"$P/bin/mythos-blackboard" write _smoketest_topic '{"x":1}' --tier=D >/dev/null
+"$P/bin/mythos-blackboard" read _smoketest_topic 2>/dev/null \
+  | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); sys.exit(0 if d.get('payload',{}).get('x')==1 else 1)"
+check "blackboard write+read roundtrip"     $?
+"$P/bin/mythos-blackboard" clear _smoketest_topic >/dev/null
+
+# Long topic name (> 64 chars) MUST be rejected with non-zero exit.
+LONG_TOPIC=$(python3 -c "print('a'*128)")
+"$P/bin/mythos-blackboard" write "$LONG_TOPIC" '{"x":1}' >/dev/null 2>&1
+[ $? -ne 0 ]
+check "blackboard rejects topic > 64 chars" $?
+
+# Concurrency: 10 parallel writes to one topic must all persist.
+"$P/bin/mythos-blackboard" clear _conc_topic >/dev/null 2>&1 || true
+for i in $(seq 1 10); do
+  "$P/bin/mythos-blackboard" write _conc_topic "{\"i\":$i}" --tier=D >/dev/null 2>&1 &
+done
+wait
+LINES=$("$P/bin/mythos-blackboard" tail _conc_topic --n 50 2>/dev/null | wc -l | tr -d ' ')
+[ "${LINES:-0}" -eq 10 ]
+check "blackboard 10 parallel writes all persist (got $LINES)" $?
+"$P/bin/mythos-blackboard" clear _conc_topic >/dev/null 2>&1 || true
+
+# Agent-guard: 20 parallel calls must all land in the ring (or be safely
+# skipped due to lock contention) without corrupting the file or stderr-spamming.
+ag_ring="$P/.claude/memory/exec-ring.jsonl"
+ag_bak=""
+[ -f "$ag_ring" ] && ag_bak=$(mktemp) && cp "$ag_ring" "$ag_bak"
+: > "$ag_ring"
+for i in $(seq 1 20); do
+  echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo conc-$i\"}}" \
+    | bash "$P/hooks/agent-guard.sh" >/dev/null 2>/tmp/mythos_agent_guard_conc_err.$$ &
+done
+wait
+# Every persisted line must be valid JSON.
+if command -v python3 >/dev/null 2>&1; then
+  python3 -c "
+import json, sys
+ok = True
+with open('$ag_ring') as f:
+    for ln in f:
+        ln = ln.strip()
+        if not ln: continue
+        try: json.loads(ln)
+        except Exception: ok = False; break
+sys.exit(0 if ok else 1)
+" 2>/dev/null
+  check "agent-guard parallel: ring is valid JSONL" $?
+fi
+# Must not flood stderr with mv errors.
+! grep -q 'mv:.*No such' /tmp/mythos_agent_guard_conc_err.$$
+check "agent-guard parallel: no mv-rename errors" $?
+rm -f /tmp/mythos_agent_guard_conc_err.$$
+if [ -n "$ag_bak" ] && [ -f "$ag_bak" ]; then
+  cp "$ag_bak" "$ag_ring"; rm -f "$ag_bak"
+fi
+
+# Observe runs and emits non-empty text.
+out="$("$P/bin/mythos-observe" 2>/dev/null)"
+[ -n "$out" ]
+check "observe prints dashboard"            $?
+
+# Epistemic-check returns valid JSON on a real file.
+"$P/bin/mythos-epistemic-check" "$P/CLAUDE.md" 2>/dev/null \
+  | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); sys.exit(0 if 'flagged' in d else 1)"
+check "epistemic-check emits valid JSON"    $?
 
 # ─── 8. Summary ───────────────────────────────────────────────────────────────
 TOTAL=$((PASS+FAIL))

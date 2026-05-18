@@ -14,6 +14,16 @@
 .claude/memory/notifications.log
 .claude/memory/subagents.log
 .claude/memory/precompact-snapshot.md
+.claude/memory/exec-ring.jsonl
+.claude/memory/research-cache.jsonl
+.claude/memory/.locks/
+.claude/memory/calibration.json
+.claude/state/
+
+# Python venv (project-local; deps reinstall via mythos-research auto-bootstrap)
+.venv/
+__pycache__/
+*.pyc
 
 # Node
 node_modules/

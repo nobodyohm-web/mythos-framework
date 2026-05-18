@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""
+Mythos Parallel Research CLI (v2)
+Token-optimized deep web research tool for agentic pipelines.
+Returns structured JSON with search results and content extracts.
+
+Features (v2):
+  - Auto-bootstraps under project .venv if deps are missing.
+  - Tries the new `ddgs` package first; falls back to legacy `duckduckgo_search`.
+  - Optional on-disk JSONL cache keyed by sha1(query+limit+fetch+safe).
+  - Single retry with safesearch=off if first call returns empty.
+
+Usage:
+  ./bin/mythos-research -q "query" [-l 4] [--fetch] [--cache] [--no-safe] [--timeout 5]
+"""
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+import sys
+import time
+import urllib.request
+
+# ── 1. Bootstrap deps under .venv if needed ──────────────────────────────────
+def _ensure_deps():
+    needed_any = ("ddgs", "duckduckgo_search")
+    needed_all = ("bs4",)
+    has_search = any(importlib.util.find_spec(m) for m in needed_any)
+    has_all    = all(importlib.util.find_spec(m) for m in needed_all)
+    if has_search and has_all:
+        return
+    here = os.path.dirname(os.path.abspath(__file__))
+    venv_root = os.path.normpath(os.path.join(here, "..", ".venv"))
+    venv_py = os.path.join(venv_root, "bin", "python3")
+    inside_venv = os.path.realpath(getattr(sys, "prefix", "")) == os.path.realpath(venv_root)
+    if os.path.exists(venv_py) and not inside_venv:
+        os.execv(venv_py, [venv_py, os.path.abspath(__file__)] + sys.argv[1:])
+    print(json.dumps({
+        "error": "Missing deps: ddgs (or duckduckgo-search) + beautifulsoup4. "
+                 "Bootstrap: python3 -m venv .venv && .venv/bin/pip install ddgs beautifulsoup4"
+    }))
+    sys.exit(2)
+
+_ensure_deps()
+
+from bs4 import BeautifulSoup  # noqa: E402
+
+# Prefer new `ddgs` package; fall back to legacy `duckduckgo_search`.
+DDGS = None
+try:
+    from ddgs import DDGS  # type: ignore
+except ImportError:
+    try:
+        from duckduckgo_search import DDGS  # type: ignore
+    except ImportError:
+        DDGS = None
+
+# ── 2. Helpers ───────────────────────────────────────────────────────────────
+def fetch_and_clean(url, timeout=5):
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5)"
+        })
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            html = response.read()
+            soup = BeautifulSoup(html, "html.parser")
+            for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
+                tag.extract()
+            text = soup.get_text(separator=" ", strip=True)
+            return text[:3000] + ("..." if len(text) > 3000 else "")
+    except Exception as e:
+        return f"Error fetching: {str(e)}"
+
+def cache_key(query, limit, fetch, safe, timeout):
+    h = hashlib.sha1()
+    h.update(f"{query}|{limit}|{int(fetch)}|{int(safe)}|{int(timeout)}".encode("utf-8"))
+    return h.hexdigest()
+
+def cache_path(project_dir):
+    p = os.path.join(project_dir, ".claude", "memory", "research-cache.jsonl")
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    return p
+
+def cache_lookup(path, key, max_age_sec=86400):
+    if not os.path.exists(path):
+        return None
+    now = time.time()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if row.get("key") == key and (now - row.get("ts_epoch", 0)) < max_age_sec:
+                    return row.get("data")
+    except OSError:
+        return None
+    return None
+
+def cache_store(path, key, data):
+    row = {"key": key, "ts_epoch": time.time(),
+           "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+           "data": data}
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except OSError:
+        pass
+
+def do_search(query, limit, safe_on):
+    if DDGS is None:
+        return []
+    try:
+        d = DDGS()
+        # `safesearch` param exists on both legacy and new packages.
+        kw = {"max_results": limit}
+        if not safe_on:
+            kw["safesearch"] = "off"
+        return list(d.text(query, **kw))
+    except Exception:
+        return []
+
+# ── 3. Main ──────────────────────────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser(description="Mythos Parallel Research CLI v2")
+    parser.add_argument("-q", "--query", required=True, help="Search query")
+    parser.add_argument("-l", "--limit", type=int, default=3, help="Max results to process")
+    parser.add_argument("-f", "--fetch", action="store_true", help="Fetch and clean full page content")
+    parser.add_argument("--cache", action="store_true", help="Use on-disk JSONL cache (24h)")
+    parser.add_argument("--no-safe", action="store_true", help="Disable safesearch")
+    parser.add_argument("--timeout", type=int, default=5, help="Per-page fetch timeout (s)")
+    args = parser.parse_args()
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.normpath(os.path.join(here, ".."))
+    cpath = cache_path(project_dir)
+    key = cache_key(args.query, args.limit, args.fetch, not args.no_safe, args.timeout)
+
+    if args.cache:
+        hit = cache_lookup(cpath, key)
+        if hit is not None:
+            hit["cached"] = True
+            print(json.dumps(hit, indent=2))
+            return
+
+    if DDGS is None:
+        print(json.dumps({"error": "No DDG client available (install `ddgs` package)"}))
+        sys.exit(1)
+
+    # Try once with safesearch ON; if empty, retry with OFF (one shot).
+    search_results = do_search(args.query, args.limit, safe_on=not args.no_safe)
+    if not search_results and not args.no_safe:
+        search_results = do_search(args.query, args.limit, safe_on=False)
+
+    results = []
+    for res in search_results:
+        item = {
+            "title": res.get("title"),
+            "url": res.get("href") or res.get("url"),
+            "snippet": res.get("body") or res.get("description"),
+        }
+        if args.fetch and item["url"]:
+            item["content"] = fetch_and_clean(item["url"], timeout=args.timeout)
+        results.append(item)
+
+    data = {"query": args.query, "results": results, "n": len(results)}
+    if args.cache:
+        cache_store(cpath, key, data)
+    print(json.dumps(data, indent=2))
+
+if __name__ == "__main__":
+    main()

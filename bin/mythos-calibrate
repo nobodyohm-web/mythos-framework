@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""
+Mythos Calibration Scorer
+Reads tasks/confidence-log.md, computes Brier score & bucket calibration from
+rows that contain BOTH a confidence number AND an outcome (success|fail|true|false).
+
+Confidence row recognized formats (one per line, all case-insensitive):
+  - "**Confidence:** 72 | **Outcome:** success"
+  - "Confidence: 85 - outcome: fail"
+  - "confidence=40 outcome=success"
+  - YAML-ish: "  confidence: 90\n  outcome: fail"
+
+Writes JSON summary to .claude/memory/calibration.json and (best-effort) merges
+into .claude/memory/patterns.json under .calibration. Always exits 0 unless an
+unexpected runtime error occurs; an empty log is reported as such, not failure.
+
+Usage:
+  ./bin/mythos-calibrate [--log PATH] [--out PATH] [--quiet]
+"""
+import argparse
+import json
+import os
+import re
+import sys
+from collections import defaultdict
+
+
+SUCCESS_TOKENS = {"success", "succeed", "succeeded", "true", "win", "shipped", "passed", "pass", "yes", "ok"}
+FAIL_TOKENS    = {"fail", "failed", "false", "loss", "lost", "regression", "error", "no", "rejected"}
+
+CONFIDENCE_RX = re.compile(r"confidence[^0-9]{0,8}(\d{1,3})", re.IGNORECASE)
+OUTCOME_RX    = re.compile(r"outcome[^A-Za-z0-9]{0,8}([A-Za-z]+)", re.IGNORECASE)
+
+
+def parse_log(path: str):
+    rows = []
+    if not os.path.exists(path):
+        return rows
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        text = f.read()
+
+    # Strategy: split on blank lines (paragraph). Inside each paragraph, look
+    # for *both* a confidence and an outcome token. This lets the format be
+    # multi-line OR single-line.
+    paragraphs = re.split(r"\n\s*\n", text)
+    for p in paragraphs:
+        cmatch = CONFIDENCE_RX.search(p)
+        omatch = OUTCOME_RX.search(p)
+        if not cmatch or not omatch:
+            continue
+        try:
+            conf = int(cmatch.group(1))
+        except ValueError:
+            continue
+        if conf < 0 or conf > 100:
+            continue
+        outcome_tok = omatch.group(1).strip().lower()
+        if outcome_tok in SUCCESS_TOKENS:
+            outcome = 1
+        elif outcome_tok in FAIL_TOKENS:
+            outcome = 0
+        else:
+            continue
+        rows.append({"confidence": conf, "outcome": outcome})
+    return rows
+
+
+def bucket(conf: int) -> str:
+    if conf < 50: return "0-49"
+    if conf < 70: return "50-69"
+    if conf < 90: return "70-89"
+    return "90-100"
+
+
+def summarize(rows):
+    if not rows:
+        return {
+            "n": 0,
+            "brier": None,
+            "buckets": {},
+            "note": "no rows with paired confidence+outcome found",
+        }
+    n = len(rows)
+    brier = sum(((r["confidence"] / 100.0) - r["outcome"]) ** 2 for r in rows) / n
+
+    bucket_stats = defaultdict(lambda: {"n": 0, "wins": 0, "avg_conf": 0.0})
+    for r in rows:
+        b = bucket(r["confidence"])
+        bucket_stats[b]["n"] += 1
+        bucket_stats[b]["wins"] += r["outcome"]
+        bucket_stats[b]["avg_conf"] += r["confidence"]
+    for b, s in bucket_stats.items():
+        s["win_rate"] = round(s["wins"] / s["n"], 3) if s["n"] else 0.0
+        s["avg_conf"] = round(s["avg_conf"] / s["n"], 1) if s["n"] else 0.0
+        s["calibration_gap"] = round((s["avg_conf"] / 100.0) - s["win_rate"], 3)
+
+    over  = sum(1 for r in rows if (r["confidence"] / 100.0) > r["outcome"] + 0.2)
+    under = sum(1 for r in rows if r["outcome"] - (r["confidence"] / 100.0) > 0.2)
+    return {
+        "n": n,
+        "brier": round(brier, 4),
+        "buckets": dict(bucket_stats),
+        "overconfident_count": over,
+        "underconfident_count": under,
+        "calibrated_count": n - over - under,
+    }
+
+
+def maybe_merge_patterns(summary, patterns_path: str):
+    if not os.path.exists(patterns_path):
+        return
+    try:
+        with open(patterns_path, "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        return
+    cal = d.get("calibration") or {}
+    cal["overconfidentCount"]  = summary.get("overconfident_count", cal.get("overconfidentCount", 0))
+    cal["underconfidentCount"] = summary.get("underconfident_count", cal.get("underconfidentCount", 0))
+    cal["calibratedCount"]     = summary.get("calibrated_count", cal.get("calibratedCount", 0))
+    cal["lastBrier"]           = summary.get("brier")
+    cal["lastN"]               = summary.get("n", 0)
+    hist = cal.get("history") or []
+    hist.append({"brier": summary.get("brier"), "n": summary.get("n", 0)})
+    cal["history"] = hist[-20:]
+    d["calibration"] = cal
+    tmp = patterns_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=2)
+    os.replace(tmp, patterns_path)
+
+
+def main():
+    here = os.path.dirname(os.path.abspath(__file__))
+    project = os.path.normpath(os.path.join(here, ".."))
+
+    ap = argparse.ArgumentParser(description="Mythos Calibration Scorer")
+    ap.add_argument("--log",  default=os.path.join(project, "tasks", "confidence-log.md"))
+    ap.add_argument("--out",  default=os.path.join(project, ".claude", "memory", "calibration.json"))
+    ap.add_argument("--patterns", default=os.path.join(project, ".claude", "memory", "patterns.json"))
+    ap.add_argument("--quiet", action="store_true")
+    args = ap.parse_args()
+
+    rows = parse_log(args.log)
+    summary = summarize(rows)
+    os.makedirs(os.path.dirname(args.out), exist_ok=True)
+    with open(args.out, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+    maybe_merge_patterns(summary, args.patterns)
+    if not args.quiet:
+        print(json.dumps(summary, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""
+Mythos Epistemic Tier Checker
+Scans a markdown file for confident assertions that lack an Epistemic Tier
+marker — one of [E] Established, [D] Derived, [C] Conjectured, [S] Speculative.
+
+Heuristic (conservative — designed to flag, not gate):
+  A "confident assertion" is a sentence that contains at least one of:
+    is, are, was, were, will, must, always, never, cannot, ensures
+  AND does NOT contain a tier tag like [E], [D], [C], or [S] anywhere in the
+  paragraph it belongs to.
+
+Output JSON:
+  { "scanned": <path>, "paragraphs": N, "flagged": N,
+    "lines_flagged": [ {"line": N, "preview": "..."} ] }
+
+Usage:
+  ./bin/mythos-epistemic-check <path>            # JSON to stdout
+  ./bin/mythos-epistemic-check <path> --report   # human-readable
+"""
+import argparse
+import json
+import os
+import re
+import sys
+
+
+CONFIDENT_RX = re.compile(r"\b(is|are|was|were|will|must|always|never|cannot|ensures|proves)\b", re.IGNORECASE)
+TIER_RX      = re.compile(r"\[(E|D|C|S)\]")
+CODE_FENCE   = re.compile(r"^\s*```")
+
+
+def scan(path: str):
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+
+    # Group lines into paragraphs while tracking original line numbers and
+    # skipping content inside fenced code blocks.
+    paragraphs = []
+    current = []
+    current_start = None
+    in_code = False
+    for i, ln in enumerate(lines, start=1):
+        if CODE_FENCE.match(ln):
+            in_code = not in_code
+            if current:
+                paragraphs.append((current_start, "".join(current)))
+                current = []
+                current_start = None
+            continue
+        if in_code:
+            continue
+        if ln.strip() == "":
+            if current:
+                paragraphs.append((current_start, "".join(current)))
+                current = []
+                current_start = None
+            continue
+        if not current:
+            current_start = i
+        current.append(ln)
+    if current:
+        paragraphs.append((current_start, "".join(current)))
+
+    flagged = []
+    for start, text in paragraphs:
+        if not CONFIDENT_RX.search(text):
+            continue
+        if TIER_RX.search(text):
+            continue
+        # Skip headings, table rows, list markers — they're scaffolding.
+        first = text.lstrip()
+        if first.startswith(("#", "|", "- ", "* ", "> ")):
+            continue
+        preview = " ".join(text.split())[:160]
+        flagged.append({"line": start, "preview": preview})
+    return {
+        "scanned": path,
+        "paragraphs": len(paragraphs),
+        "flagged": len(flagged),
+        "lines_flagged": flagged,
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("path")
+    ap.add_argument("--report", action="store_true")
+    args = ap.parse_args()
+    if not os.path.exists(args.path):
+        print(json.dumps({"error": "not found", "path": args.path}))
+        sys.exit(2)
+    result = scan(args.path)
+    if args.report:
+        print(f"epistemic-check: {result['flagged']}/{result['paragraphs']} paragraphs untagged in {args.path}")
+        for f in result["lines_flagged"][:20]:
+            print(f"  L{f['line']}: {f['preview']}")
+        if len(result["lines_flagged"]) > 20:
+            print(f"  … +{len(result['lines_flagged']) - 20} more")
+    else:
+        print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    main()

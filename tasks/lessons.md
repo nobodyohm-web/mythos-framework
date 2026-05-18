@@ -1,84 +1,33 @@
-# Lessons Learned — Agentic Autonomy
+# Lessons Learned
 
-> This file is updated automatically after every user correction.
-> Claude Code must review this file at session start and apply all patterns.
-> Fed by: L3 Self-Improvement Loop (Rule #3) + L4 Journal Analyzer subagent.
+> Append new lessons under `### YYYY-MM-DD — Short title`. Keep each lesson load-bearing — generic advice doesn't belong here.
 
----
+### 2026-05-18 — Externalize state across agents; isolate context per agent
+**Mistake (pre-evolution):** Mythos relied on subagents returning a single summary string for cross-agent handoff, which loses raw evidence and recreates context drift the parallel design was supposed to avoid.
+**Root cause:** No durable, structured handoff mechanism between agents — only the Task tool's return value.
+**Rule:** Use `bin/mythos-blackboard` for any cross-agent work that must preserve evidence. One topic per workstream, always tag the entry with an Epistemic Tier (`--tier=E|D|C|S`). Pattern matches InfiAgent / blackboard architecture.
 
-## Format
-Each lesson follows this structure:
-```
-### [DATE] — [SHORT TITLE]
-**Mistake:** What went wrong
-**Root Cause:** Why it happened
-**Rule:** What to do instead (permanently)
-```
+### 2026-05-18 — Detect loops at the hook layer, not in the model
+**Mistake (latent):** Repeated identical Bash commands (a classic agent failure mode) were only caught by the operator's eyes.
+**Root cause:** No PostToolUse hook tracking command frequency.
+**Rule:** `hooks/agent-guard.sh` keeps a 20-entry ring buffer of Bash commands. ≥3 repeats of the same command emits an `[AGENT-GUARD]` warning into the next model turn. Threshold tunable via `MYTHOS_LOOP_THRESHOLD`. When the warning fires, stop and re-plan — do not retry blindly.
 
----
+### 2026-05-18 — `jq -c` without `-n` waits on stdin
+**Mistake:** `mythos-blackboard write` silently created an empty file because `jq -c --arg ... '{...}' >> tmp` (no `-n`) waited on stdin and consumed nothing.
+**Root cause:** Forgot the `-n` (null-input) flag for jq's create-from-scratch idiom.
+**Rule:** When using jq purely to construct JSON from `--arg`/`--argjson` (no input filter), ALWAYS use `jq -nc` (or `-n` family). Repro the bug in test before claiming write success.
 
-<!-- Lessons will be appended below this line -->
+### 2026-05-18 — `jq -Rs . <<<` adds a trailing newline; don't grep with it
+**Mistake:** `agent-guard.sh` couldn't count command repeats because the escaped match string ended in `\n`, which `grep` can't match within a single line.
+**Root cause:** `jq -Rs . <<<"$x"` reads `$x` + the herestring's appended newline.
+**Rule:** For per-line matching in JSONL ring buffers, prefer `jq` over `grep` (`jq -r --arg c "$CMD" 'select(.cmd == $c) | .ts' | wc -l`). If using grep, strip newlines via `printf '%s'` instead of `<<<`.
 
-### 2026-05-10 — Wiring is not enforcement until the file exists
-**Mistake:** v3.2 settings.json wired 14 hooks (`bash hooks/X.sh ... || true`), but the `hooks/` directory was absent in this checkout. Every hook silently no-op'd thanks to `|| true`. The system *looked* fully evolved (patterns.json said "all green") but had zero runtime enforcement.
-**Root Cause:** Conflated configuration with implementation. A self-test that only checked settings.json structure (not file existence on disk) cannot detect missing implementations referenced by that config. The `|| true` fallback hid the failure.
-**Rule:** Every config reference must be paired with a presence check in `test-mythos.sh`. For hooks specifically: `[ -f hooks/X.sh ] && [ -x hooks/X.sh ]` for every script the settings.json file mentions. Never use `|| true` to swallow "file not found" — only to swallow "non-zero exit from a working file".
+### 2026-05-18 — Auto-bootstrap CLI deps via project `.venv`
+**Mistake:** A fresh shell of `bin/mythos-research` errored on missing `duckduckgo_search`/`bs4`.
+**Root cause:** Hard import at top with no fallback; macOS Homebrew Python rejects user installs (PEP-668).
+**Rule:** Project Python CLIs check for deps with `importlib.util.find_spec`. If missing and a project `.venv` exists, `os.execv` themselves under `.venv/bin/python3`. Same pattern reused for any future Python CLI.
 
-### 2026-05-10 — Hook activation can block your own meta-tooling
-**Mistake:** Right after wiring git-guardian, ran a Bash command containing literal strings like `cat /home/x/.env` and `rm -rf /` (as JSON test payloads). The PreToolUse hook saw those substrings in the outer command and blocked execution.
-**Root Cause:** git-guardian inspects `.tool_input.command` from the harness, which is the FULL outer command — it cannot tell test heredocs from real commands. Substring detection is correct enforcement; it just doesn't distinguish authoring context from runtime.
-**Rule:** Embed hook behavior tests **inside `hooks/test-mythos.sh`** (which calls `bash hooks/X.sh` directly with crafted stdin), not as ad-hoc Bash one-liners from the agent. The self-test is invoked by the harness as `bash hooks/test-mythos.sh` — that outer string contains no dangerous substrings, so the hook stays out of its own way.
-
-### 2026-05-10 — Substring matching is too coarse for command guards
-**Mistake:** v3.3 git-guardian first pass flagged `git commit -m "...removed rm -rf / shortcut..."` as a destructive command. The dangerous pattern was inside a quoted argument (commit-message body), not the actual invocation. Result: legitimate commits were blocked.
-**Root Cause:** Used substring `grep -Eq` against the entire command line. A command guard must distinguish *invocations* from *string literals embedded in arguments*. Without doing real shell parsing, anchoring on shell-segment boundaries is the minimum viable heuristic.
-**Rule:** Anchor every guard pattern with `^` after splitting the command on shell separators (`;`, `&&`, `||`, `|`, newline) AND replacing quoted strings with a placeholder first. Each segment's leading invocation is what gets matched. Three regression tests now live in `test-mythos.sh`:
-  1. `git commit -m "...dangerous string..."` → MUST allow (quoted content).
-  2. `echo hi && rm -rf /` → MUST block (real chained invocation).
-  3. `echo "git push --force main"` → MUST allow (string content).
-
-### 2026-05-10 — CLAUDE.md is a budget, not a wishlist
-**Mistake:** Initial CLAUDE.md was 268 lines including ascii diagrams, prose identity statements, and French verification blocks. Anthropic explicitly warns this causes Claude to ignore rules buried in noise.
-**Root Cause:** Mistook comprehensiveness for clarity. Added everything that "felt useful" rather than only what changed Claude's behavior.
-**Rule:** For every line in CLAUDE.md, ask "would removing this cause Claude to make a mistake?" If no → cut. Cap at 200 lines. Use `@imports` for detail; lazy-load via skills.
-
-### 2026-05-10 — Hooks beat prompts for invariants
-**Mistake:** Relying on CLAUDE.md instructions like "never commit secrets" — these are advisory and depend on model adherence.
-**Root Cause:** Confused advisory text with deterministic enforcement.
-**Rule:** Anything that MUST happen every time → hook. Anything that's situational → CLAUDE.md or skill. Defense-in-depth: layer both for critical invariants (e.g. force-push to main is denied in `permissions.deny` AND blocked by `git-guardian.sh`).
-
-### 2026-05-10 — Test hooks with crafted stdin
-**Mistake:** Past evolutions wrote hooks but never validated behavior end-to-end.
-**Root Cause:** Assumed bash syntax check = working hook.
-**Rule:** For every hook with branching logic, verify with `echo '{...}' | bash hooks/foo.sh; echo "exit=$?"`. Confirm both block-path (exit 2) and allow-path (exit 0). Bake these into `test-mythos.sh` over time.
-
-### 2026-05-10 — Keep Bash(*) wildcard in permissions.allow
-**Mistake:** /evolve replaced `Bash(*)` with 45 scoped commands (git, npm, bun...). Every unlisted command triggered a permission prompt, breaking autonomous flow.
-**Root Cause:** Research said "wildcards defeat the safety classifier" — but the user explicitly wants ZERO permission prompts. The `deny` list already blocks dangerous operations (force-push, rm -rf /, secret reads).
-**Rule:** ALWAYS keep `Bash(*)` in permissions.allow. Use `deny` list for security, NOT scoped allow. The deny list is the guardrail, not the allow list.
-
-### 2026-05-10 — Subagents must live at .claude/agents/ to be discoverable
-**Mistake:** v3.0–v3.1 stored subagent specs at `subagents/<name>.md`. Claude Code's Task tool only auto-discovers `.claude/agents/<name>.md` (project) and `~/.claude/agents/<name>.md` (user). The flat `subagents/` files were documentation only.
-**Root Cause:** Confused "we wrote a subagent spec" with "the harness can invoke it". The schema was fine; the path was wrong.
-**Rule:** Canonical subagent location is `.claude/agents/<name>.md`. Keep `subagents/` only as human reference. Frontmatter MUST include `name`, `description`, `tools` (comma-separated), `model`. The `description` is what triggers automatic delegation — write it as "when to use" in third person.
-
-### 2026-05-10 — Hook output should use the official JSON contract when possible
-**Mistake:** smart-router emitted plain-text `[ROUTER] Task type: ...` to stdout. The harness still surfaced it, but the cleanest path is the documented `{"hookSpecificOutput":{"hookEventName":"...","additionalContext":"..."}}` shape.
-**Root Cause:** Took the path of least resistance instead of reading the hook spec.
-**Rule:** When a hook injects context, prefer the JSON contract via `jq`. Fall back to plain stdout only if `jq` is missing. This keeps integration with future Claude Code versions stable.
-
-### 2026-05-10 — Wire the full hook lifecycle, not just the obvious events
-**Mistake:** v3.1 wired only SessionStart/End, UserPromptSubmit, PreToolUse, PostToolUse, Stop. Missed PreCompact (state lost on /compact), SubagentStop (no subagent observability), Notification (no surface for permission events).
-**Root Cause:** Built reactively for the events I'd already used; didn't audit the complete event list in the docs.
-**Rule:** When adding observability, check every event in `code.claude.com/docs/en/hooks` and decide explicitly: wire it, log it, or document why not.
-
-### 2026-05-10 — Capture pre-compact state, don't lose it
-**Mistake:** When `/compact` ran mid-session, transient context (current task, branch, last lesson) was rebuilt from scratch. Wasted tokens re-deriving what was already known.
-**Root Cause:** Treated /compact as "free" cleanup; ignored that it discards working memory.
-**Rule:** PreCompact hook persists a small markdown snapshot (`precompact-snapshot.md`) that the post-compact session can read in one Read call. Cheap insurance.
-
-### 2026-05-10 — `grep -c … || echo 0` is a footgun
-**Mistake:** First v4 self-eval hook used `VAR="$(grep -c PATTERN file 2>/dev/null || echo 0)"` to count matches. When grep matches zero lines, it prints `0` AND exits 1 — so the `||` branch *also* runs `echo 0`. The variable then captures `0\n0`, which broke `jq --argjson` ("invalid JSON text"), causing the hook to write nothing to `eval-metrics.jsonl` (caught by the new `self-eval row is valid JSON` test).
-**Root Cause:** Conflated "exit 1" with "no output". `grep -c` always outputs the count regardless of exit code; `wc -l` and similar counters do too.
-**Rule:** When you need a single integer from a counting command, sanitize it: `_count(){ printf '%s' "$1" | tr -dc '0-9'; }; VAR="$(_count "$(grep -c X f 2>/dev/null)")"`. Never `|| echo 0` after a command that already prints a number — you'll get `0\n0`. The behavioral test (`jq` fails on the malformed payload) is what caught this; keep adding "row is valid JSON" tests for every metric writer.
-
+### 2026-05-18 — Use the renamed `ddgs` package; keep legacy import as fallback
+**Mistake:** `duckduckgo_search` is deprecated and was returning empty results from this network.
+**Root cause:** Upstream renamed the package to `ddgs`; legacy still installs but is rate-limited.
+**Rule:** `bin/mythos-research v2` tries `from ddgs import DDGS` first, falls back to `duckduckgo_search`. If results are empty, retries once with `safesearch=off`.

@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""
+Mythos Reflection CLI
+Prepares a deterministic reflection bundle (diffs, plans, logs) for the Judge/Reviewer agent.
+Usage:
+  ./bin/mythos-reflect [--target file_or_dir]
+"""
+import sys
+import subprocess
+import os
+
+def run_cmd(cmd):
+    try:
+        return subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        return e.output
+
+def main():
+    target = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == '--target' else '.'
+    
+    print("==================================================")
+    print("              MYTHOS REFLECTION BUNDLE            ")
+    print("==================================================")
+    print("\n[1] GIT DIFF (Uncommitted & Staged Changes)")
+    print("--------------------------------------------------")
+    diff = run_cmd("git diff HEAD")
+    print(diff if diff.strip() else "No uncommitted changes.")
+
+    print("\n[2] RECENT COMMIT LOG (Last 3)")
+    print("--------------------------------------------------")
+    print(run_cmd("git log -n 3 --oneline"))
+    
+    print("\n[3] TYPECHECK / SYNTAX CHECK")
+    print("--------------------------------------------------")
+    # Quick auto-detect logic
+    if os.path.exists("package.json"):
+        print("TypeScript/JS environment detected. Running basic check...")
+        print(run_cmd("npx tsc --noEmit || echo 'TypeScript check failed or not configured'"))
+    elif os.path.exists("requirements.txt") or os.path.exists("pyproject.toml"):
+        print("Python environment detected.")
+        print(run_cmd("flake8 . || echo 'Flake8 not installed or found issues'"))
+    
+    print("\n[4] TODO.MD PLAN STATE")
+    print("--------------------------------------------------")
+    if os.path.exists("tasks/todo.md"):
+        with open("tasks/todo.md", "r") as f:
+            print(f.read())
+    else:
+        print("No tasks/todo.md found.")
+        
+    print("==================================================")
+    print("BUNDLE COMPLETE. PASS TO /critique OR REVIEWER.")
+
+if __name__ == "__main__":
+    main()

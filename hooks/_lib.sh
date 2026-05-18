@@ -108,3 +108,33 @@ mythos_block() {
 }
 
 mythos_allow() { exit 0; }
+
+# Cross-platform mutex via atomic mkdir. macOS has no /usr/bin/flock.
+# Usage:
+#   mythos_lock_acquire <name> <timeout_ms?>
+#   mythos_lock_release <name>
+# Returns 0 if lock acquired, 1 if timed out. Default timeout: 5000ms.
+mythos_lock_acquire() {
+  local name="$1" timeout_ms="${2:-5000}"
+  local lockdir="${MYTHOS_MEMORY_DIR}/.locks/${name}.lock"
+  mkdir -p "${MYTHOS_MEMORY_DIR}/.locks" 2>/dev/null || true
+  local waited=0
+  while ! mkdir "$lockdir" 2>/dev/null; do
+    # Stale-lock check: if owner pid is gone, steal it.
+    local owner="" pidfile="$lockdir/pid"
+    [ -f "$pidfile" ] && owner=$(cat "$pidfile" 2>/dev/null)
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -rf "$lockdir" 2>/dev/null || true
+      continue
+    fi
+    sleep 0.05 2>/dev/null || sleep 1
+    waited=$((waited + 50))
+    [ "$waited" -ge "$timeout_ms" ] && return 1
+  done
+  printf '%s' "$$" > "$lockdir/pid" 2>/dev/null || true
+  return 0
+}
+mythos_lock_release() {
+  local lockdir="${MYTHOS_MEMORY_DIR}/.locks/${1}.lock"
+  rm -rf "$lockdir" 2>/dev/null || true
+}

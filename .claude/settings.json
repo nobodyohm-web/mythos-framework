@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PreMarket.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" restore 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" SessionStart < /dev/null 2>/dev/null || true'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-start.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" restore 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" SessionStart < /dev/null 2>/dev/null || true'",
             "timeout": 15000
           }
         ]
@@ -73,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/PostTrade.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" PostToolUse < /dev/null 2>/dev/null || true'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" PostToolUse < /dev/null 2>/dev/null || true'",
             "timeout": 15000
           }
         ]
@@ -83,8 +83,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/error-recovery.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/execution-monitor.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" PostToolUse < /dev/null 2>/dev/null || true'",
-            "timeout": 5000
+            "command": "sh -c 'INPUT=$(cat); printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/agent-guard.sh\" 2>/dev/null; printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/error-recovery.sh\" 2>/dev/null; printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null; printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/execution-monitor.sh\" 2>/dev/null; printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" PostToolUse 2>/dev/null || true'",
+            "timeout": 8000
           }
         ]
       }
@@ -138,7 +138,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" save 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/self-eval.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/EndOfDay.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" SessionEnd < /dev/null 2>/dev/null || true'",
+            "command": "sh -c 'bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/auto-learn.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-state.sh\" save 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/self-eval.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/session-end.sh\" 2>/dev/null; bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" SessionEnd < /dev/null 2>/dev/null || true'",
             "timeout": 30000
           }
         ]
@@ -175,6 +175,9 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "MYTHOS_MODE": "enabled",
     "MYTHOS_AUTO_APPROVE": "true",
-    "MYTHOS_VERSION": "4.0"
+    "MYTHOS_MAX_REFLECTION": "true",
+    "CLAUDE_CODE_EXPERIMENTAL_THINKING": "true",
+    "MYTHOS_VERSION": "5.1",
+    "MYTHOS_SPEC_DRIVEN": "true"
   }
 }
