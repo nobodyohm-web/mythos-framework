@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# mythos-gvu — Generator-Verifier-Updater state machine.
+#
+# Formalizes the GVU triad from arXiv:2512.02731v1 (Chojecki, 2025). Each
+# self-improvement step records three blackboard entries:
+#   gvu-<task>-gen      — generator output (the proposed change)
+#   gvu-<task>-verify   — verifier verdict (pass|fail + reason)
+#   gvu-<task>-update   — consolidated update (lesson + outcome)
+#
+# Subcommands:
+#   record-generation   <task-id> <payload-file|->
+#   record-verification <task-id> <pass|fail> [reason]
+#   commit-update       <task-id>
+#   status              <task-id>
+#
+# Storage layout: delegates to bin/mythos-blackboard. One task = three topics.
+set -uo pipefail
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+. "$PROJECT_DIR/hooks/_lib.sh"
+BB="$PROJECT_DIR/bin/mythos-blackboard"
+
+usage() { sed -n '2,15p' "$0" >&2; exit 64; }
+
+# Validate task-id (same rules as blackboard topic; we add the gvu- prefix).
+validate_task() {
+  local t="$1"
+  case "$t" in
+    ""|*[!A-Za-z0-9._-]*) echo "❌ invalid task-id: $t" >&2; exit 64 ;;
+  esac
+  # gvu-<task>-update must fit blackboard's 64-char topic cap.
+  # Reserve 11 chars for the "gvu--update" prefix/suffix.
+  if [ "${#t}" -gt 53 ]; then
+    echo "❌ task-id > 53 chars (blackboard topic cap)" >&2; exit 64
+  fi
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  record-generation)
+    task="${1:-}"; src="${2:-}"
+    [ -z "$task" ] || [ -z "$src" ] && usage
+    validate_task "$task"
+    if [ "$src" = "-" ]; then payload="$(cat)"; else
+      [ ! -f "$src" ] && { echo "❌ no such file: $src" >&2; exit 1; }
+      payload="$(cat "$src")"
+    fi
+    printf '%s' "$payload" | "$BB" write "gvu-$task-gen" - --tier=D
+    ;;
+
+  record-verification)
+    task="${1:-}"; verdict="${2:-}"; reason="${3:-}"
+    [ -z "$task" ] || [ -z "$verdict" ] && usage
+    validate_task "$task"
+    case "$verdict" in pass|fail) ;; *) echo "❌ verdict must be pass|fail" >&2; exit 64 ;; esac
+    if command -v jq >/dev/null 2>&1; then
+      payload="$(jq -nc --arg v "$verdict" --arg r "$reason" '{verdict:$v,reason:$r}')"
+    else
+      esc_r=$(printf '%s' "$reason" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      payload="{\"verdict\":\"$verdict\",\"reason\":\"$esc_r\"}"
+    fi
+    printf '%s' "$payload" | "$BB" write "gvu-$task-verify" - --tier=D
+    ;;
+
+  commit-update)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    # Read gen+verify under a per-task lock to avoid a fresh verify entry
+    # sneaking in between the two reads (Kill Gate v5.2 pass 1 MEDIUM finding).
+    if ! mythos_lock_acquire "gvu-$task" 5000; then
+      echo "❌ could not acquire lock for gvu-$task (busy)" >&2; exit 75
+    fi
+    trap "mythos_lock_release \"gvu-$task\"" EXIT
+    gen_line=$("$BB" read "gvu-$task-gen" 2>/dev/null || true)
+    ver_line=$("$BB" read "gvu-$task-verify" 2>/dev/null || true)
+    [ -z "$gen_line" ] && { mythos_lock_release "gvu-$task"; trap - EXIT; echo "❌ missing gen entry for $task" >&2; exit 65; }
+    [ -z "$ver_line" ] && { mythos_lock_release "gvu-$task"; trap - EXIT; echo "❌ missing verify entry for $task" >&2; exit 65; }
+    if command -v jq >/dev/null 2>&1; then
+      verdict=$(printf '%s' "$ver_line" | jq -r '.payload.verdict // empty')
+      reason=$(printf '%s' "$ver_line" | jq -r '.payload.reason // empty')
+    else
+      verdict=$(printf '%s' "$ver_line" | sed -n 's/.*"verdict":"\([^"]*\)".*/\1/p')
+      reason=$(printf '%s' "$ver_line"  | sed -n 's/.*"reason":"\([^"]*\)".*/\1/p')
+    fi
+    [ -z "$verdict" ] && { echo "❌ verify entry malformed" >&2; exit 65; }
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    if command -v jq >/dev/null 2>&1; then
+      upd=$(jq -nc --arg t "$task" --arg v "$verdict" --arg r "$reason" --arg ts "$ts" \
+        '{task:$t,verdict:$v,reason:$r,ts:$ts}')
+    else
+      esc_r=$(printf '%s' "$reason" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      upd="{\"task\":\"$task\",\"verdict\":\"$verdict\",\"reason\":\"$esc_r\",\"ts\":\"$ts\"}"
+    fi
+    printf '%s' "$upd" | "$BB" write "gvu-$task-update" - --tier=D
+    mythos_lock_release "gvu-$task"
+    trap - EXIT
+    printf '✓ committed update for %s → %s\n' "$task" "$verdict"
+    ;;
+
+  status)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    for stage in gen verify update; do
+      printf '── gvu-%s-%s ──\n' "$task" "$stage"
+      "$BB" read "gvu-$task-$stage" 2>/dev/null || echo "(no entry)"
+    done
+    ;;
+
+  ""|-h|--help|help) usage ;;
+  *) echo "❌ unknown subcommand: $cmd" >&2; usage ;;
+esac

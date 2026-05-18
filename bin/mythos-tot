@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# mythos-tot — Tree-of-Thoughts state CLI (arXiv:2601.12560 §cognitive arch).
+#
+# Maintains a JSON tree under .claude/state/tot/<task>.json. Lets a multi-step
+# planner branch-and-score instead of carrying the whole search inline.
+#
+# Node shape:
+#   {id, goal, children:[ids], score:int|null, status:open|done|pruned, parent}
+#
+# Subcommands:
+#   init   <task> <root-goal>
+#   expand <task> <parent-id> <child-goal>...
+#   score  <task> <id> <0-100> [reason]
+#   prune  <task> <id>
+#   best   <task>            # highest-scoring leaf, JSON {best,score,path,goal}
+#   show   <task>            # render tree
+#
+set -uo pipefail
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+TOT_DIR="$PROJECT_DIR/.claude/state/tot"
+mkdir -p "$TOT_DIR"
+
+# Source lock primitives — every read-modify-write below runs under a per-task
+# atomic-mkdir mutex. Without this, concurrent `expand`/`score`/`prune` calls
+# lose updates (verified by Kill Gate v5.2 pass 1: 3 parallel expands dropped
+# 6 of 10 children + produced an intermediate unparseable JSON file).
+. "$PROJECT_DIR/hooks/_lib.sh"
+
+usage() { sed -n '2,17p' "$0" >&2; exit 64; }
+validate_task() {
+  case "$1" in
+    ""|*[!A-Za-z0-9._-]*) echo "❌ invalid task name (chars): $1" >&2; exit 64 ;;
+  esac
+  [ "${#1}" -gt 64 ] && { echo "❌ task name > 64" >&2; exit 64; }
+}
+
+# Acquire per-task lock; release on EXIT. Times out at 5s. Exit 75 on lock fail.
+tot_lock() {
+  if ! mythos_lock_acquire "tot-$1" 5000; then
+    echo "❌ could not acquire lock for tot-$1 (busy)" >&2
+    exit 75
+  fi
+  trap "mythos_lock_release \"tot-$1\"" EXIT
+}
+tot_unlock() {
+  mythos_lock_release "tot-$1"
+  trap - EXIT
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  init)
+    task="${1:-}"; goal="${2:-}"
+    [ -z "$task" ] || [ -z "$goal" ] && usage
+    validate_task "$task"
+    file="$TOT_DIR/$task.json"
+    tot_lock "$task"
+    [ -f "$file" ] && { tot_unlock "$task"; echo "❌ already exists: $task" >&2; exit 1; }
+    python3 - "$file" "$task" "$goal" <<'PY'
+import json, sys, time
+file, task, goal = sys.argv[1:4]
+tree = {"task": task,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "root": "n1", "next_id": 2,
+        "nodes": {"n1": {"id": "n1", "goal": goal, "children": [],
+                          "score": None, "status": "open", "parent": None}}}
+with open(file, "w") as f: json.dump(tree, f, indent=2)
+print(f"✓ init {task} root=n1")
+PY
+    tot_unlock "$task"
+    ;;
+
+  expand)
+    task="${1:-}"; parent="${2:-}"; shift 2 || true
+    { [ -z "$task" ] || [ -z "$parent" ] || [ $# -eq 0 ]; } && usage
+    validate_task "$task"
+    file="$TOT_DIR/$task.json"
+    tot_lock "$task"
+    [ ! -f "$file" ] && { tot_unlock "$task"; echo "❌ no such task: $task" >&2; exit 1; }
+    python3 - "$file" "$parent" "$@" <<'PY'
+import json, sys
+file, parent = sys.argv[1], sys.argv[2]
+children = sys.argv[3:]
+with open(file) as f: tree = json.load(f)
+if parent not in tree["nodes"]:
+    sys.stderr.write(f"❌ no such node: {parent}\n"); sys.exit(1)
+if tree["nodes"][parent]["status"] == "pruned":
+    sys.stderr.write(f"❌ parent is pruned: {parent}\n"); sys.exit(1)
+new_ids = []
+for g in children:
+    nid = f"n{tree['next_id']}"; tree['next_id'] += 1
+    tree["nodes"][nid] = {"id": nid, "goal": g, "children": [],
+                           "score": None, "status": "open", "parent": parent}
+    tree["nodes"][parent]["children"].append(nid)
+    new_ids.append(nid)
+with open(file, "w") as f: json.dump(tree, f, indent=2)
+print(f"✓ expand {parent} → {','.join(new_ids)}")
+PY
+    tot_unlock "$task"
+    ;;
+
+  score)
+    task="${1:-}"; nid="${2:-}"; score="${3:-}"; reason="${4:-}"
+    { [ -z "$task" ] || [ -z "$nid" ] || [ -z "$score" ]; } && usage
+    validate_task "$task"
+    # Pre-validate score before touching the file.
+    case "$score" in
+      ''|*[!0-9-]*) echo "❌ score must be int 0-100" >&2; exit 64 ;;
+    esac
+    if [ "$score" -lt 0 ] || [ "$score" -gt 100 ] 2>/dev/null; then
+      echo "❌ score must be 0-100" >&2; exit 64
+    fi
+    file="$TOT_DIR/$task.json"
+    tot_lock "$task"
+    [ ! -f "$file" ] && { tot_unlock "$task"; echo "❌ no such task" >&2; exit 1; }
+    python3 - "$file" "$nid" "$score" "$reason" <<'PY'
+import json, sys
+file, nid, score, reason = sys.argv[1:5]
+try: score = int(score)
+except ValueError: sys.stderr.write("❌ score must be int\n"); sys.exit(64)
+if not (0 <= score <= 100):
+    sys.stderr.write("❌ score must be 0-100\n"); sys.exit(64)
+with open(file) as f: tree = json.load(f)
+if nid not in tree["nodes"]:
+    sys.stderr.write(f"❌ no such node: {nid}\n"); sys.exit(1)
+tree["nodes"][nid]["score"] = score
+if reason: tree["nodes"][nid]["reason"] = reason
+tree["nodes"][nid]["status"] = "done"
+with open(file, "w") as f: json.dump(tree, f, indent=2)
+print(f"✓ scored {nid}={score}")
+PY
+    tot_unlock "$task"
+    ;;
+
+  prune)
+    task="${1:-}"; nid="${2:-}"
+    { [ -z "$task" ] || [ -z "$nid" ]; } && usage
+    validate_task "$task"
+    file="$TOT_DIR/$task.json"
+    tot_lock "$task"
+    [ ! -f "$file" ] && { tot_unlock "$task"; echo "❌ no such task" >&2; exit 1; }
+    python3 - "$file" "$nid" <<'PY'
+import json, sys
+file, nid = sys.argv[1], sys.argv[2]
+with open(file) as f: tree = json.load(f)
+if nid not in tree["nodes"]:
+    sys.stderr.write(f"❌ no such node: {nid}\n"); sys.exit(1)
+stack = [nid]
+while stack:
+    cur = stack.pop()
+    tree["nodes"][cur]["status"] = "pruned"
+    stack.extend(tree["nodes"][cur]["children"])
+with open(file, "w") as f: json.dump(tree, f, indent=2)
+print(f"✓ pruned subtree at {nid}")
+PY
+    tot_unlock "$task"
+    ;;
+
+  best)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    file="$TOT_DIR/$task.json"
+    [ ! -f "$file" ] && { echo "❌ no such task" >&2; exit 1; }
+    python3 - "$file" <<'PY'
+import json, sys
+file = sys.argv[1]
+with open(file) as f: tree = json.load(f)
+best = None; best_score = -1
+for n in tree["nodes"].values():
+    if n["status"] == "pruned": continue
+    if not n["children"] and isinstance(n["score"], int) and n["score"] > best_score:
+        best = n; best_score = n["score"]
+if best is None:
+    print(json.dumps({"best": None})); sys.exit(0)
+path = []; cur = best
+while cur is not None:
+    path.append(cur["id"])
+    pid = cur.get("parent")
+    cur = tree["nodes"].get(pid) if pid else None
+path.reverse()
+print(json.dumps({"best": best["id"], "score": best_score,
+                  "path": path, "goal": best["goal"]}))
+PY
+    ;;
+
+  show)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    file="$TOT_DIR/$task.json"
+    [ ! -f "$file" ] && { echo "❌ no such task" >&2; exit 1; }
+    python3 - "$file" <<'PY'
+import json, sys
+file = sys.argv[1]
+with open(file) as f: tree = json.load(f)
+def render(nid, depth=0):
+    n = tree["nodes"][nid]
+    marker = "✗" if n["status"] == "pruned" else ("✓" if n["status"] == "done" else "·")
+    sc = f"[{n['score']}]" if n["score"] is not None else "[?]"
+    print(f"{'  '*depth}{marker} {nid} {sc} {n['goal']}")
+    for c in n["children"]: render(c, depth+1)
+render(tree["root"])
+PY
+    ;;
+
+  ""|-h|--help|help) usage ;;
+  *) echo "❌ unknown subcommand: $cmd" >&2; usage ;;
+esac

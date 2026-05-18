@@ -1,5 +1,5 @@
 {
-  "version": "5.1",
+  "version": "5.2",
   "sessionsCompleted": 0,
   "evolutionHistory": [
     {
@@ -31,6 +31,43 @@
         "hooks/test-mythos.sh (107 \u2192 166 checks)",
         ".claude/settings.json (wired agent-guard.sh + PostToolUse stdin tee)"
       ]
+    },
+    {
+      "ts": "2026-05-18T10:35:00Z",
+      "from": "5.1",
+      "to": "5.2",
+      "name": "deep-evolve: hallucination-guard + injection-guard + GVU + ToT + budget",
+      "sota_patterns_adopted": [
+        "plan-act-correct-verify-cycle (MIT LLaMAR \u2014 arXiv DSpace 1721.1/162935)",
+        "generator-verifier-updater-triad (Chojecki \u2014 arXiv:2512.02731v1)",
+        "tree-of-thoughts-state-on-disk (arXiv:2601.12560v1)",
+        "hallucination-in-action-guard (arXiv:2601.12560 open challenge #1)",
+        "prompt-injection-guard-on-untrusted-content (arXiv:2601.12560 open challenge #3)",
+        "tool-budget-visibility (MIT GenAI Divide \u2014 Medium 2026-05)"
+      ],
+      "new_files": [
+        "bin/mythos-budget",
+        "bin/mythos-gvu",
+        "bin/mythos-tot",
+        "hooks/hallucination-guard.sh",
+        "hooks/prompt-injection-guard.sh",
+        "skills/pacv.md",
+        "skills/gvu.md",
+        "skills/tot.md",
+        "specs/deep-evolution-plan-v2.md",
+        ".claude/memory/research/sota-2026-05-18b.md"
+      ],
+      "upgraded_files": [
+        ".claude/settings.json (wired hallucination-guard + prompt-injection-guard, MYTHOS_VERSION 5.1 \u2192 5.2)",
+        "CLAUDE.md (header v5.0 \u2192 v5.2; commands + skills tables extended; hook-lifecycle updated)",
+        "hooks/test-mythos.sh (v5.2 checks for new hooks + CLIs)",
+        "tasks/lessons.md (4 new load-bearing lessons)"
+      ],
+      "deferred_to_v53": [
+        "microsoft/Trace (autodiff for agents)",
+        "Agent Client Protocol (ACP) \u2014 parallel stdio protocol to MCP",
+        "Perplexity Agent API as mythos-research backend"
+      ]
     }
   ],
   "calibration": {
@@ -57,6 +94,26 @@
       {
         "brier": 0.2542,
         "n": 5
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
       },
       {
         "brier": null,

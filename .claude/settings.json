@@ -61,8 +61,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/git-guardian.sh\" bash",
-            "timeout": 3000
+            "command": "sh -c 'INPUT=$(cat); printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/git-guardian.sh\" bash; GG=$?; if [ $GG -ne 0 ]; then exit $GG; fi; printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/hallucination-guard.sh\" 2>/dev/null || true'",
+            "timeout": 5000
           }
         ]
       }
@@ -85,6 +85,16 @@
             "type": "command",
             "command": "sh -c 'INPUT=$(cat); printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/agent-guard.sh\" 2>/dev/null; printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/error-recovery.sh\" 2>/dev/null; printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/context-guardian.sh\" 2>/dev/null; printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/execution-monitor.sh\" 2>/dev/null; printf %s \"$INPUT\" | bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/observability.sh\" PostToolUse 2>/dev/null || true'",
             "timeout": 8000
+          }
+        ]
+      },
+      {
+        "matcher": "Read|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/hooks/prompt-injection-guard.sh\" 2>/dev/null || true",
+            "timeout": 3000
           }
         ]
       }
@@ -177,7 +187,7 @@
     "MYTHOS_AUTO_APPROVE": "true",
     "MYTHOS_MAX_REFLECTION": "true",
     "CLAUDE_CODE_EXPERIMENTAL_THINKING": "true",
-    "MYTHOS_VERSION": "5.1",
+    "MYTHOS_VERSION": "5.2",
     "MYTHOS_SPEC_DRIVEN": "true"
   }
 }

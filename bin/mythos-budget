@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# mythos-budget — tool-call budget tracker.
+#
+# Reads .claude/memory/events.jsonl and counts tool_use events per session.
+# Emits warnings when approaching/exceeding budget thresholds.
+#
+# Usage:
+#   mythos-budget                    # current session
+#   mythos-budget --limit 300        # override limit (default 200)
+#   mythos-budget --all              # all sessions, table form
+#   mythos-budget --json             # JSON output (stable shape for CI)
+#
+# JSON shape (single session):
+#   {"session":"...", "counts":{"Bash":N,...}, "total":N, "limit":L, "status":"OK|WARN|EXCEEDED"}
+set -uo pipefail
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+. "$PROJECT_DIR/hooks/_lib.sh"
+
+EVENTS="$MYTHOS_EVENTS_LOG"
+LIMIT="${MYTHOS_BUDGET_LIMIT:-200}"
+JSON=0
+ALL=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --limit)
+      if [ $# -lt 2 ]; then echo "❌ --limit needs a value" >&2; exit 64; fi
+      LIMIT="$2"; shift 2 ;;
+    --limit=*) LIMIT="${1#--limit=}"; shift ;;
+    --all) ALL=1; shift ;;
+    --json) JSON=1; shift ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    *) echo "❌ unknown flag: $1" >&2; exit 64 ;;
+  esac
+done
+
+# Validate LIMIT is a non-negative integer.
+case "$LIMIT" in
+  ''|*[!0-9]*) echo "❌ --limit must be a non-negative integer (got: $LIMIT)" >&2; exit 64 ;;
+esac
+
+if [ ! -f "$EVENTS" ]; then
+  if [ "$JSON" -eq 1 ]; then
+    printf '{"session":null,"counts":{},"total":0,"limit":%s,"status":"OK"}\n' "$LIMIT"
+  else
+    printf 'no events log at %s\n' "$EVENTS"
+  fi
+  exit 0
+fi
+
+python3 - "$EVENTS" "$LIMIT" "$ALL" "$JSON" <<'PY'
+import json, sys, collections
+events_path, limit_s, all_s, json_s = sys.argv[1:5]
+limit = int(limit_s); all_mode = (all_s == "1"); json_mode = (json_s == "1")
+
+sessions = collections.defaultdict(lambda: collections.Counter())
+last_session = None
+with open(events_path, encoding="utf-8", errors="replace") as f:
+    for ln in f:
+        try: row = json.loads(ln)
+        except Exception: continue
+        ev = row.get("event","")
+        pl = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        sid = pl.get("session_id") or "unknown"
+        if ev == "SessionStart":
+            last_session = sid
+        if ev in ("PostToolUse", "tool_use", "PreToolUse"):
+            tool = pl.get("tool_name") or pl.get("tool") or ""
+            if tool:
+                sessions[sid][tool] += 1
+
+def classify(n, lim):
+    if n >= lim: return "EXCEEDED"
+    if n >= int(lim * 0.8): return "WARN"
+    return "OK"
+
+if all_mode:
+    out = {sid: dict(c) for sid, c in sessions.items()}
+    if json_mode:
+        print(json.dumps(out, indent=2))
+    else:
+        for sid, c in out.items():
+            print(f"── {sid} ──")
+            tot = sum(c.values())
+            print(f"  total: {tot} / {limit} ({classify(tot, limit)})")
+            for tool, n in sorted(c.items(), key=lambda x: -x[1]):
+                print(f"  {tool:<20} {n}")
+else:
+    sid = last_session or (max(sessions.keys(), key=lambda s: sum(sessions[s].values())) if sessions else "unknown")
+    counts = dict(sessions.get(sid, {}))
+    total = sum(counts.values())
+    out = {"session": sid, "counts": counts, "total": total,
+           "limit": limit, "status": classify(total, limit)}
+    if json_mode:
+        print(json.dumps(out, indent=2))
+    else:
+        print(f"session: {out['session']}")
+        print(f"total:   {out['total']} / {out['limit']} ({out['status']})")
+        for tool, n in sorted(out["counts"].items(), key=lambda x: -x[1]):
+            print(f"  {tool:<20} {n}")
+PY
