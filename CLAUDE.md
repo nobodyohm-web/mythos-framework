@@ -62,7 +62,6 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 | `skills/terse-mode.md` | Output-token reduction (~65%): no preamble, no recap, final state only |
 | `skills/multi-provider-routing.md` | Run Claude Code against OpenRouter/DeepSeek/Ollama/Gemini via claude-code-router |
 | `skills/free-claude-code-assessment.md` | E/D/C/S verdict on "free claude code" projects + OAuth-proxy safety |
-| `skills/ollama-integration.md` | Local Ollama as fleet worker via native Anthropic-API (v0.14+); /assimilate Phase 1.5 |
 
 ---
 
@@ -80,16 +79,14 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 | `bin/mythos-skill` | Marketplace CLI for skills (`list/search/info/install/verify/recommend/add`). |
 | `bin/mythos-agent` | Marketplace CLI for subagents (same surface as `mythos-skill`). |
 | `bin/mythos-route` | Status/guidance for `claude-code-router` (multi-provider). Read-only — never flips the switch for you. |
-| `bin/mythos-ollama` | Local Ollama status/install-hint/recommend. Read-only — never installs, never pulls. |
 | `bin/mythos-tokens` | Per-session token accounting from Claude Code transcripts. `--json` for CI. |
-| `bin/mythos-fleet` | Multi-worker orchestrator (`claude -p --bare`); supports `--ollama` for free local workers. |
+| `bin/mythos-fleet` | Multi-worker orchestrator using `claude -p --bare`. Safe defaults (read-only, budget cap, no auto-merge). |
 | `/marketplace` | Browse + install curated skills & agents from `registry/`. |
 | `/skill-install <id>` | Install a single skill (or `--tag` for bulk). |
 | `/agent-install <id>` | Install a single subagent (or `--tag` for bulk). |
 | `/terse` | Activate terse mode (no preamble/recap/narration) — ~65% output token reduction. |
 | `/route` | Inspect / guide multi-provider routing (OpenRouter, DeepSeek, Ollama, Gemini). |
-| `/ollama` | Local Ollama status + fleet integration (advisory; never installs or pulls). |
-| `/fleet` | Dispatch + collect parallel `claude -p` workers (`--ollama` for local, `--provider` via `ccr`). |
+| `/fleet` | Dispatch + collect parallel `claude -p` workers (optionally routed via `ccr`). |
 | `/mythosrun [task]` | Full autonomous loop (research → plan → execute → verify → learn) |
 | `/assimilate` | Run this when injected into a new repo. Agent scans the host, researches its domain, and adapts. |
 | `/deep-evolve` | The Ultimate Self-Improvement Loop. Unleash the monster. |

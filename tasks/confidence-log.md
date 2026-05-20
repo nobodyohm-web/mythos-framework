@@ -21,13 +21,3 @@
 **ACs passed:** 10/10
 **Lesson candidate:** Empty bash arrays under `set -u` + iteration on bash 3.2 — see existing macOS-grep lesson pattern. Captured below.
 **Concerns:** Note from Anthropic docs: starting June 15, 2026, `claude -p` usage on subscription plans draws from a separate Agent SDK credit pool. Users running heavy fleets should be aware. Not a code concern, but worth a callout in the fleet command doc — added.
-
-### 2026-05-20 23:45 — Ollama Integration During /assimilate (spec 006)
-**Spec:** specs/006-ollama-assimilate/spec.md
-**Confidence:** 93/100
-**Approach:** Wire Ollama into `/assimilate` as advisory Phase 1.5 + provide `bin/mythos-ollama` as read-only/printf-only CLI (status/models/install/enable/disable/pull/recommend/probe, never executes installers or pulls) + extend `bin/mythos-fleet` with `--ollama` shortcut using Ollama's NATIVE Anthropic Messages API compat (v0.14+, no ccr proxy needed) + new `skills/ollama-integration.md` + `/ollama` slash. Honors `OLLAMA_HOST` env var for non-default ports. Mutual exclusion enforced between `--ollama` and `--provider`. Exit-4 path symmetric with `--provider`-without-ccr.
-**Changes:** 4 files modified (CLAUDE.md, .claude/commands/assimilate.md, bin/mythos-fleet, registry/skills.json, specs/registry.json, hooks/test-mythos.sh), 4 files created (spec.md, review.md, bin/mythos-ollama, skills/ollama-integration.md, .claude/commands/ollama.md). ~520 net lines added.
-**Verification:** ✅ typecheck (n/a — shell, bash -n green) | ✅ self-test (268/268 — added 17 Ollama checks) | ✅ smoke (status/models/enable/install/pull/recommend/probe + fleet --ollama happy + exit-4 paths) | ✅ spec-traceability (13/13 ACs) | ✅ manual diff review | ✅ CLAUDE.md 146/150 lines | ✅ safety contract preserved (no auto-install, no auto-pull, no eval, no rc-file mutation)
-**ACs passed:** 13/13
-**Time estimate vs actual:** Slightly longer due to one jq formula bug (caught in models --json verification, fixed before commit). bash -n + smoke loop caught it on first run.
-**Concerns:** None blocking. `bin/mythos-ollama enable` references `$OLLAMA_HOST_DEFAULT` so it tracks `$OLLAMA_HOST` — but recommend's prose still says `localhost:11434`; cosmetic only.
