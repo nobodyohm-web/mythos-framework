@@ -4,6 +4,8 @@ A drop-in upgrade for **Claude Code** that turns it into a rigorous, hallucinati
 
 > Core principle (load-bearing): **SEEK → FIND → VERIFY → KEEP WHAT SURVIVES**
 
+**v5.4 — Token optimization + multi-provider routing.** Output verbosity reduction (~65% via `skills/terse-mode.md` + `/terse`), task-aware model routing (8 reasoning agents on Opus, `researcher` on Sonnet for fetch+summarize), per-session token accounting (`bin/mythos-tokens`), and read-only guidance for running Claude Code against OpenRouter/DeepSeek/Ollama/Gemini (`bin/mythos-route` + `/route`).
+
 ---
 
 ## Why this exists
@@ -124,10 +126,64 @@ claude
 | `bin/mythos-calibrate`    | Confidence-vs-outcome calibration                                   |
 | `bin/mythos-epistemic-check` | Tier-tag claims in artifacts                                     |
 | `bin/mythos-observe`      | Tail the event stream                                               |
+| `bin/mythos-route`        | Status/guidance for `claude-code-router` (multi-provider) — read-only |
+| `bin/mythos-tokens`       | Per-session token accounting (`session` / `all` / `list`, `--json`)  |
 
 ### Key slash commands
 
-`/marketplace`, `/skill-install`, `/agent-install`, `/mythosrun`, `/assimilate`, `/critique`, `/team`, `/swarm`, `/evolve`, `/deep-evolve`, `/benchmark`, `/calibrate`, `/reflect`, `/heal`, `/deepaudit`, `/research`, `/specify`, `/ship`, `/bootstrap`, `/diagnose`, `/learn`.
+`/marketplace`, `/skill-install`, `/agent-install`, `/terse`, `/route`, `/mythosrun`, `/assimilate`, `/critique`, `/team`, `/swarm`, `/evolve`, `/deep-evolve`, `/benchmark`, `/calibrate`, `/reflect`, `/heal`, `/deepaudit`, `/research`, `/specify`, `/ship`, `/bootstrap`, `/diagnose`, `/learn`.
+
+---
+
+## Token economy
+
+Token cost has two axes: **how much you write** (output) and **what you pay per token** (provider). Mythos addresses both — without ever sacrificing reasoning power.
+
+### Output side — `/terse` + `skills/terse-mode.md`
+
+The "caveman pattern" cuts output tokens by 60–75% with no loss of correctness:
+
+- No preamble ("I'll…", "Let me…").
+- No recap of the user's request.
+- No tool-call narration.
+- Final state, not journey.
+- End on substance, no closing remark.
+
+Type `/terse` once and the rule applies for the rest of the session. CLAUDE.md's OPERATING MODE item 1 enforces the same rule by default.
+
+### Provider side — `/route` + `skills/multi-provider-routing.md`
+
+Mythos integrates with [`musistudio/claude-code-router`](https://github.com/musistudio/claude-code-router) (MIT, 26k★), the de-facto upstream proxy that lets you point Claude Code at OpenRouter, DeepSeek, Ollama, Gemini, SiliconFlow, Volcengine, Groq, and more.
+
+`bin/mythos-route` is **strictly read-only**. It tells you what to paste, it never mutates your shell, your rc files, or your packages:
+
+```bash
+bin/mythos-route status      # detect ccr install, current ANTHROPIC_BASE_URL, config presence
+bin/mythos-route providers   # list configured provider names
+bin/mythos-route install     # print install commands (no execution)
+bin/mythos-route enable      # print the activation line (user pastes themselves)
+bin/mythos-route disable     # print the deactivation line
+```
+
+### Reasoning power preserved
+
+Model routing is **task-aware**, not blanket downgrade:
+
+- **Opus (8 agents)**: `architect`, `planner`, `reviewer`, `security-auditor`, `implementer`, `tester`, `debugger`, `optimizer` — anything requiring design judgment, code generation, root-cause analysis, or critical review.
+- **Sonnet (1 agent)**: `researcher` only — its job is WebSearch + WebFetch + summarize, which is I/O-bound and benefits less from Opus-grade reasoning.
+
+This rule is codified in `specs/004-token-optim-routing/spec.md`: downgrade ONLY when the task is fetch-and-summarize, never when judgment or design is involved.
+
+### Visibility — `bin/mythos-tokens`
+
+Parse Claude Code's own transcripts to know exactly what you spent:
+
+```bash
+bin/mythos-tokens session            # latest session (input/output/cache_create/cache_read/total)
+bin/mythos-tokens all                # totals across every session in this project
+bin/mythos-tokens list               # session IDs found
+bin/mythos-tokens --json all         # machine-readable for CI
+```
 
 ---
 
@@ -146,10 +202,10 @@ A single command verifies the whole system end-to-end:
 
 ```bash
 bash hooks/test-mythos.sh
-# → ✓ ALL CLEAR — 222/222 checks passed
+# → ✓ ALL CLEAR — 238/238 checks passed
 ```
 
-Tests cover: file layout, hook wiring, JSON validity, frontmatter on every agent, guard behavior under crafted inputs, marketplace CLIs, registry shape, and dry-run install safety.
+Tests cover: file layout, hook wiring, JSON validity, frontmatter on every agent, guard behavior under crafted inputs, marketplace CLIs, registry shape, dry-run install safety, token-optim CLIs (`mythos-route`, `mythos-tokens`), and the subagent model policy (8 on Opus, 1 on Sonnet).
 
 ---
 

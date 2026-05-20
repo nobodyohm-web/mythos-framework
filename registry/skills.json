@@ -183,6 +183,30 @@
       "version": "5.2.0",
       "license": "MIT",
       "verified": true
+    },
+    {
+      "id": "terse-mode",
+      "name": "Terse Mode",
+      "summary": "Output-token reduction (~65%): no preamble, no recap, no narration. Final state only.",
+      "tags": ["meta", "token-optimization", "core"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": "skills/terse-mode.md" },
+      "install_path": "skills/terse-mode.md",
+      "version": "5.4.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "multi-provider-routing",
+      "name": "Multi-Provider Routing",
+      "summary": "Run Claude Code against OpenRouter/DeepSeek/Ollama/Gemini/SiliconFlow via claude-code-router. Mythos stays read-only — never flips the switch silently.",
+      "tags": ["routing", "cost", "tooling"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": "skills/multi-provider-routing.md" },
+      "install_path": "skills/multi-provider-routing.md",
+      "version": "5.4.0",
+      "license": "MIT",
+      "verified": true
     }
   ]
 }

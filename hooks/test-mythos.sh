@@ -639,6 +639,57 @@ DRY_AFTER="$(ls "$P/skills/" | wc -l | tr -d ' ')"
 [ "$DRY_BEFORE" = "$DRY_AFTER" ]
 check "install --dry-run does not write files"          $?
 
+# ─── 7t. Token Optimization + Multi-Provider Routing ─────────────────────────
+section "Token Optim + Multi-Provider"
+
+# 7t.1 new skill files exist + parse as markdown
+for s in terse-mode multi-provider-routing; do
+  [ -f "$P/skills/$s.md" ]; check "skills/$s.md exists"   $?
+  head -1 "$P/skills/$s.md" 2>/dev/null | grep -qE '^#'
+  check "skills/$s.md starts with markdown H1"            $?
+done
+
+# 7t.2 new slash commands exist
+for c in terse route; do
+  [ -f "$P/.claude/commands/$c.md" ]
+  check ".claude/commands/$c.md exists"                   $?
+done
+
+# 7t.3 new binaries exist + executable
+for b in mythos-route mythos-tokens; do
+  [ -x "$P/bin/$b" ]; check "+x:    bin/$b"               $?
+done
+
+# 7t.4 mythos-route is informational only — status must run, never set ANTHROPIC_BASE_URL
+( unset ANTHROPIC_BASE_URL; "$P/bin/mythos-route" status >/dev/null 2>&1 )
+check "mythos-route status runs without ANTHROPIC_BASE_URL set"  $?
+
+"$P/bin/mythos-route" help 2>/dev/null | grep -qi 'never'
+check "mythos-route help mentions 'never' (safety contract)"     $?
+
+# Sub-shell isolation: 'enable' must NOT export ANTHROPIC_BASE_URL into the parent.
+( unset ANTHROPIC_BASE_URL; "$P/bin/mythos-route" disable >/dev/null 2>&1; \
+  test -z "${ANTHROPIC_BASE_URL:-}" )
+check "mythos-route disable does not mutate parent env"          $?
+
+# 7t.5 mythos-tokens help + safe behavior
+"$P/bin/mythos-tokens" --help >/dev/null 2>&1
+check "mythos-tokens --help runs"                                $?
+
+# 7t.6 registry has the two new entries
+"$P/bin/mythos-skill" info terse-mode 2>/dev/null | grep -q '"id": "terse-mode"'
+check "registry contains terse-mode"                             $?
+"$P/bin/mythos-skill" info multi-provider-routing 2>/dev/null | grep -q '"id": "multi-provider-routing"'
+check "registry contains multi-provider-routing"                 $?
+
+# 7t.7 subagent model assignment policy
+opus_count="$(grep -l '^model: opus$' "$P"/.claude/agents/*.md 2>/dev/null | wc -l | tr -d ' ')"
+sonnet_count="$(grep -l '^model: sonnet$' "$P"/.claude/agents/*.md 2>/dev/null | wc -l | tr -d ' ')"
+[ "$opus_count" = "8" ]
+check "8 subagents on opus (reasoning-heavy)"                    $?
+[ "$sonnet_count" = "1" ]
+check "1 subagent on sonnet (researcher only — fetch+summarize)" $?
+
 # ─── 8. Summary ───────────────────────────────────────────────────────────────
 TOTAL=$((PASS+FAIL))
 printf '\n──────────────────────────────────────\n'

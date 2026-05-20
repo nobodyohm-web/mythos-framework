@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# mythos-route — Read-only helper for claude-code-router (multi-provider routing).
+#
+# This CLI is INFORMATIONAL ONLY. It NEVER:
+#   - eval()s into your shell
+#   - modifies ~/.zshrc, ~/.bashrc, or any rc file
+#   - installs npm packages
+#   - writes API keys
+#
+# All flips are user-driven. We print, you paste.
+
+set -euo pipefail
+
+CCR_BIN="$(command -v ccr 2>/dev/null || true)"
+CCR_CONFIG="${HOME}/.claude-code-router/config.json"
+ROUTER_DEFAULT_URL="http://127.0.0.1:3456"
+
+c_red()    { printf '\033[31m%s\033[0m' "$*"; }
+c_green()  { printf '\033[32m%s\033[0m' "$*"; }
+c_yellow() { printf '\033[33m%s\033[0m' "$*"; }
+c_dim()    { printf '\033[2m%s\033[0m'  "$*"; }
+
+usage() {
+  cat <<EOF
+mythos-route — claude-code-router status & guidance
+
+Usage:
+  mythos-route status        Show ccr install, current ANTHROPIC_BASE_URL, config presence
+  mythos-route providers     List provider names from ~/.claude-code-router/config.json
+  mythos-route install       Print install commands (does NOT execute)
+  mythos-route enable        Print the activation line for the user to paste
+  mythos-route disable       Print the deactivation line for the user to paste
+  mythos-route help          This help
+
+Never modifies your shell, your rc files, or your packages.
+See: skills/multi-provider-routing.md
+EOF
+}
+
+cmd_status() {
+  echo "── mythos-route status ──"
+  if [ -n "$CCR_BIN" ]; then
+    echo "ccr binary:        $(c_green ok) ($CCR_BIN)"
+    if "$CCR_BIN" --version >/dev/null 2>&1; then
+      echo "ccr version:       $("$CCR_BIN" --version 2>&1 | head -1)"
+    fi
+  else
+    echo "ccr binary:        $(c_red missing) — run \`mythos-route install\` for instructions"
+  fi
+
+  if [ -f "$CCR_CONFIG" ]; then
+    echo "config file:       $(c_green ok) ($CCR_CONFIG)"
+    if command -v jq >/dev/null 2>&1; then
+      local provider_count
+      provider_count="$(jq -r '.Providers | length // 0' "$CCR_CONFIG" 2>/dev/null || echo 0)"
+      echo "providers in cfg:  $provider_count"
+    fi
+  else
+    echo "config file:       $(c_yellow absent) ($CCR_CONFIG)"
+  fi
+
+  local base="${ANTHROPIC_BASE_URL:-}"
+  if [ -z "$base" ]; then
+    echo "ANTHROPIC_BASE_URL: $(c_dim unset) — using first-party Anthropic"
+  elif [ "$base" = "$ROUTER_DEFAULT_URL" ] || [[ "$base" == http://127.0.0.1:* ]] || [[ "$base" == http://localhost:* ]]; then
+    echo "ANTHROPIC_BASE_URL: $(c_green routed) ($base)"
+  else
+    echo "ANTHROPIC_BASE_URL: $(c_yellow custom) ($base)"
+  fi
+  echo
+  echo "Skill: skills/multi-provider-routing.md"
+}
+
+cmd_providers() {
+  if [ ! -f "$CCR_CONFIG" ]; then
+    echo "config absent: $CCR_CONFIG" >&2
+    echo "run 'mythos-route install' first" >&2
+    return 2
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "jq is required to read the config" >&2
+    return 3
+  fi
+  jq -r '.Providers[]? | "\(.name)\t\(.api_base_url // "?")"' "$CCR_CONFIG" \
+    | awk -F'\t' 'BEGIN{printf "%-20s %s\n","NAME","ENDPOINT"} {printf "%-20s %s\n",$1,$2}'
+}
+
+cmd_install() {
+  cat <<'EOF'
+── claude-code-router install ──
+
+  npm install -g @anthropic-ai/claude-code
+  npm install -g @musistudio/claude-code-router
+
+Then create ~/.claude-code-router/config.json — see skills/multi-provider-routing.md.
+
+mythos-route will NOT run these for you. Copy, review, run yourself.
+EOF
+}
+
+cmd_enable() {
+  if [ -z "$CCR_BIN" ]; then
+    echo "ccr not installed — run 'mythos-route install' first" >&2
+    return 2
+  fi
+  cat <<EOF
+── enable router (copy & paste in your shell) ──
+
+  ccr start
+  eval "\$(ccr activate)"
+
+Then verify with:
+
+  mythos-route status
+
+To revert: open a new shell, or run 'mythos-route disable'.
+EOF
+}
+
+cmd_disable() {
+  cat <<'EOF'
+── disable router (copy & paste in your shell) ──
+
+  unset ANTHROPIC_BASE_URL
+
+Then verify with:
+
+  mythos-route status
+
+Next 'claude' invocation will use first-party Anthropic.
+EOF
+}
+
+case "${1:-help}" in
+  status)    cmd_status ;;
+  providers) cmd_providers ;;
+  install)   cmd_install ;;
+  enable)    cmd_enable ;;
+  disable)   cmd_disable ;;
+  -h|--help|help) usage ;;
+  *) echo "unknown subcommand: $1" >&2; usage >&2; exit 1 ;;
+esac

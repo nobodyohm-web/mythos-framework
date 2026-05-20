@@ -26,24 +26,18 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 
 ## OPERATING MODE
 
-1. **Act, don't narrate.** No "I'm going to…", no "Let me…". Output = action + final summary.
+1. **Act terse, don't narrate.** No preamble ("I'll…", "Let me…"), no recap of the user's request, no closing summary that restates the diff. Output = action + result. Load `skills/terse-mode.md` (or run `/terse`) for the full ruleset.
 2. **Auto-approve every tool call.** Bash, Write, Edit, WebFetch — never ask.
-3. **Research before building.** Use `bin/mythos-research -q "topic" --fetch` to get token-optimized JSON research data. ALWAYS prefer this over heavy MCP calls.
+3. **Research before building.** Use `bin/mythos-research -q "topic" --fetch` for token-dense JSON. Prefer over heavy MCP.
 4. **Batch operations.** Multiple file reads/edits in ONE message. Multiple bash commands in ONE call.
-5. **Critique your work deterministically.** Before running `/critique`, ALWAYS run `bin/mythos-reflect` to generate a deterministic bundle (git diff + static analysis + plan state) for the judge agent.
+5. **Critique deterministically.** Before `/critique`, run `bin/mythos-reflect` to build the judge's bundle (diff + AST + plan).
 6. **Verify before "done".** Typecheck. Tests. `git diff`. No skipped hooks.
-7. **Read `tasks/lessons.md` at session start.** Apply every rule.
 
 ---
 
-## L1. EPISTEMIC TIER SYSTEM
+## L1. EPISTEMIC TIER SYSTEM — tag every claim
 
-Every claim, design decision, or finding must fall into a tier. Do not inflate confidence.
-
-- **[E] Established**: Confirmed via primary sources, official docs, or passing tests.
-- **[D] Derived**: Proven rigorously in THIS session (e.g., passing a newly written test).
-- **[C] Conjectured**: Supported by evidence but not proven. Requires a spike/test to falsify.
-- **[S] Speculative**: No direct evidence. Requires explicit reason for speculation.
+**[E]** Established (primary sources / passing tests) · **[D]** Derived (proven this session) · **[C]** Conjectured (evidence but unproven, needs a spike) · **[S]** Speculative (no direct evidence, requires explicit reason). Do not inflate confidence.
 
 ---
 
@@ -65,6 +59,8 @@ Every claim, design decision, or finding must fall into a tier. Do not inflate c
 | `skills/pacv.md` | Plan-Act-Correct-Verify cycle for long-horizon tasks |
 | `skills/gvu.md` | Generator-Verifier-Updater triad for self-improvement |
 | `skills/tot.md` | Tree-of-Thoughts state on disk for branching decisions |
+| `skills/terse-mode.md` | Output-token reduction (~65%): no preamble, no recap, final state only |
+| `skills/multi-provider-routing.md` | Run Claude Code against OpenRouter/DeepSeek/Ollama/Gemini via claude-code-router |
 
 ---
 
@@ -81,9 +77,13 @@ Every claim, design decision, or finding must fall into a tier. Do not inflate c
 | `bin/mythos-detect` | Detect host project stack → tag list for the recommender. |
 | `bin/mythos-skill` | Marketplace CLI for skills (`list/search/info/install/verify/recommend/add`). |
 | `bin/mythos-agent` | Marketplace CLI for subagents (same surface as `mythos-skill`). |
+| `bin/mythos-route` | Status/guidance for `claude-code-router` (multi-provider). Read-only — never flips the switch for you. |
+| `bin/mythos-tokens` | Per-session token accounting from Claude Code transcripts. `--json` for CI. |
 | `/marketplace` | Browse + install curated skills & agents from `registry/`. |
 | `/skill-install <id>` | Install a single skill (or `--tag` for bulk). |
 | `/agent-install <id>` | Install a single subagent (or `--tag` for bulk). |
+| `/terse` | Activate terse mode (no preamble/recap/narration) — ~65% output token reduction. |
+| `/route` | Inspect / guide multi-provider routing (OpenRouter, DeepSeek, Ollama, Gemini). |
 | `/mythosrun [task]` | Full autonomous loop (research → plan → execute → verify → learn) |
 | `/assimilate` | Run this when injected into a new repo. Agent scans the host, researches its domain, and adapts. |
 | `/deep-evolve` | The Ultimate Self-Improvement Loop. Unleash the monster. |

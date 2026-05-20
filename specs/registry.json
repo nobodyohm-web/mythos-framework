@@ -1,5 +1,16 @@
 {
   "version": "1.0",
   "description": "Feature specification registry — tracks all specs from /specify through implementation",
-  "features": []
+  "features": [
+    {
+      "id": "004",
+      "slug": "token-optim-routing",
+      "title": "Token Optimization + Multi-Provider Routing",
+      "status": "implemented",
+      "confidence": 92,
+      "spec": "specs/004-token-optim-routing/spec.md",
+      "branch": "master",
+      "completed_at": "2026-05-20"
+    }
+  ]
 }
