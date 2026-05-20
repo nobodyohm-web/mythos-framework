@@ -20,6 +20,7 @@ set -euo pipefail
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 FLEET_DIR="$PROJECT_DIR/.claude/state/fleet"
 CCR_DEFAULT_URL="http://127.0.0.1:3456"
+OLLAMA_DEFAULT_URL="${OLLAMA_HOST:-http://127.0.0.1:11434}"
 DEFAULT_BUDGET="1.00"
 DEFAULT_TOOLS="Read,Grep,Glob"
 DEFAULT_MODEL="sonnet"
@@ -50,6 +51,8 @@ dispatch options:
   --id <id>           Worker id (default: auto-generated)
   --model <m>         Model alias or full id (default: $DEFAULT_MODEL)
   --provider <name>   Route via claude-code-router (requires ccr running)
+  --ollama            Route directly to local Ollama (Anthropic-compat, no ccr)
+                      Requires endpoint reachable at $OLLAMA_DEFAULT_URL
   --budget <usd>      Max spend, e.g. 0.50 (default: $DEFAULT_BUDGET)
   --allow-tools <l>   Comma-separated tools (default: read-only "$DEFAULT_TOOLS")
   --perm <mode>       Permission mode (default: $DEFAULT_PERM)
@@ -75,8 +78,13 @@ ccr_running() {
   curl -fsS -o /dev/null -m 1 "$url/" 2>/dev/null
 }
 
+ollama_running() {
+  local url="${1:-$OLLAMA_DEFAULT_URL}"
+  curl -fsS -o /dev/null -m 1 "$url/api/version" 2>/dev/null
+}
+
 cmd_dispatch() {
-  local task="" id="" model="$DEFAULT_MODEL" provider=""
+  local task="" id="" model="$DEFAULT_MODEL" provider="" use_ollama=0
   local budget="$DEFAULT_BUDGET" tools="$DEFAULT_TOOLS" perm="$DEFAULT_PERM"
   local add_dirs="" cwd="$PWD"
 
@@ -85,6 +93,7 @@ cmd_dispatch() {
       --id)          id="$2";       shift 2 ;;
       --model)       model="$2";    shift 2 ;;
       --provider)    provider="$2"; shift 2 ;;
+      --ollama)      use_ollama=1;  shift ;;
       --budget)      budget="$2";   shift 2 ;;
       --allow-tools) tools="$2";    shift 2 ;;
       --perm)        perm="$2";     shift 2 ;;
@@ -98,6 +107,11 @@ cmd_dispatch() {
         shift ;;
     esac
   done
+
+  if [ -n "$provider" ] && [ $use_ollama -eq 1 ]; then
+    echo "--provider and --ollama are mutually exclusive" >&2
+    return 1
+  fi
 
   if [ -z "$task" ]; then
     echo "dispatch: task required" >&2
@@ -115,13 +129,24 @@ cmd_dispatch() {
     echo "claude not in PATH — install @anthropic-ai/claude-code" >&2; return 2
   }
 
-  local env_prefix=""
+  local env_vars=()
   if [ -n "$provider" ]; then
     if ! ccr_running "$CCR_DEFAULT_URL"; then
       echo "ccr not running at $CCR_DEFAULT_URL — start it with 'ccr start' first" >&2
       return 4
     fi
-    env_prefix="ANTHROPIC_BASE_URL=$CCR_DEFAULT_URL"
+    env_vars=("ANTHROPIC_BASE_URL=$CCR_DEFAULT_URL")
+  elif [ $use_ollama -eq 1 ]; then
+    if ! ollama_running "$OLLAMA_DEFAULT_URL"; then
+      echo "ollama not reachable at $OLLAMA_DEFAULT_URL — start daemon: 'ollama serve'" >&2
+      return 4
+    fi
+    provider="ollama"
+    env_vars=(
+      "ANTHROPIC_BASE_URL=$OLLAMA_DEFAULT_URL"
+      "ANTHROPIC_AUTH_TOKEN=ollama"
+      "ANTHROPIC_API_KEY="
+    )
   fi
 
   local started
@@ -154,8 +179,8 @@ cmd_dispatch() {
 
   (
     cd "$cwd"
-    if [ -n "$env_prefix" ]; then
-      env "$env_prefix" claude "${args[@]}" > "$out" 2> "$err"
+    if [ ${#env_vars[@]} -gt 0 ]; then
+      env "${env_vars[@]}" claude "${args[@]}" > "$out" 2> "$err"
     else
       claude "${args[@]}" > "$out" 2> "$err"
     fi

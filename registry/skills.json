@@ -219,6 +219,18 @@
       "version": "5.5.0",
       "license": "MIT",
       "verified": true
+    },
+    {
+      "id": "ollama-integration",
+      "name": "Ollama Integration (native Anthropic-API)",
+      "summary": "Local Ollama as zero-cost fleet worker tier via Ollama's native Anthropic Messages API (v0.14+). No ccr proxy needed. 64k-context model picks, when to use vs keep on Anthropic, /assimilate Phase 1.5 probe.",
+      "tags": ["routing", "local", "cost", "fleet"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": "skills/ollama-integration.md" },
+      "install_path": "skills/ollama-integration.md",
+      "version": "5.6.0",
+      "license": "MIT",
+      "verified": true
     }
   ]
 }

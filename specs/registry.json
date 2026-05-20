@@ -21,6 +21,16 @@
       "spec": "specs/005-fleet-mode/spec.md",
       "branch": "master",
       "completed_at": "2026-05-20"
+    },
+    {
+      "id": "006",
+      "slug": "ollama-assimilate",
+      "title": "Ollama Integration During /assimilate (native Anthropic-API compat)",
+      "status": "implemented",
+      "confidence": 93,
+      "spec": "specs/006-ollama-assimilate/spec.md",
+      "branch": "master",
+      "completed_at": "2026-05-20"
     }
   ]
 }

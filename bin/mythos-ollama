@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+# mythos-ollama — Read-only helper for local Ollama integration.
+#
+# Mythos integrates with Ollama's NATIVE Anthropic Messages API compatibility
+# (Ollama v0.14+). No proxy (ccr) needed for Ollama specifically — just set
+#   ANTHROPIC_AUTH_TOKEN=ollama
+#   ANTHROPIC_API_KEY=""
+#   ANTHROPIC_BASE_URL=http://localhost:11434
+# and Claude Code routes directly to your local daemon.
+#
+# This CLI is INFORMATIONAL ONLY. It NEVER:
+#   - runs `brew install ollama`, `curl | sh`, or any installer
+#   - runs `ollama pull <model>` (large downloads — user-controlled)
+#   - eval()s into your shell
+#   - modifies ~/.zshrc, ~/.bashrc, or any rc file
+#   - writes API keys
+#
+# All consequential actions are printed — you paste, you execute.
+
+set -euo pipefail
+
+OLLAMA_BIN="$(command -v ollama 2>/dev/null || true)"
+OLLAMA_HOST_DEFAULT="${OLLAMA_HOST:-http://127.0.0.1:11434}"
+MIN_VERSION_NATIVE="0.14"  # first version with Anthropic Messages API compat
+MIN_CONTEXT_TOKENS=64000
+
+c_red()    { printf '\033[31m%s\033[0m' "$*"; }
+c_green()  { printf '\033[32m%s\033[0m' "$*"; }
+c_yellow() { printf '\033[33m%s\033[0m' "$*"; }
+c_dim()    { printf '\033[2m%s\033[0m'  "$*"; }
+
+usage() {
+  cat <<EOF
+mythos-ollama — local Ollama status & guidance for Mythos fleet workers
+
+Usage:
+  mythos-ollama status         Detect binary, endpoint, version, model count
+  mythos-ollama models [--json] List installed models with size
+  mythos-ollama install        Print install commands (DOES NOT EXECUTE)
+  mythos-ollama enable         Print env vars to paste in your shell
+  mythos-ollama disable        Print env vars to unset
+  mythos-ollama pull <model>   Print 'ollama pull' command (DOES NOT EXECUTE)
+  mythos-ollama recommend      Suggest code-capable models with >=${MIN_CONTEXT_TOKENS}t ctx
+  mythos-ollama probe          Reachability check, exit 0/1
+  mythos-ollama help           This help
+
+Safety: this CLI never installs, never pulls, never modifies your shell. It
+prints commands for you to review and run. Same contract as mythos-route.
+
+See: skills/ollama-integration.md
+EOF
+}
+
+endpoint_reachable() {
+  local url="${1:-$OLLAMA_HOST_DEFAULT}"
+  curl -fsS -o /dev/null -m 1 "$url/api/version" 2>/dev/null
+}
+
+cmd_status() {
+  echo "── mythos-ollama status ──"
+  if [ -n "$OLLAMA_BIN" ]; then
+    echo "ollama binary:     $(c_green ok) ($OLLAMA_BIN)"
+    local ver
+    ver="$("$OLLAMA_BIN" --version 2>&1 | head -1 | awk '{print $NF}')"
+    echo "ollama version:    $ver"
+    if [ -n "$ver" ]; then
+      local major minor
+      major="$(echo "$ver" | cut -d. -f1)"
+      minor="$(echo "$ver" | cut -d. -f2)"
+      if [ "${major:-0}" -gt 0 ] || [ "${minor:-0}" -ge 14 ]; then
+        echo "native anthropic:  $(c_green yes) (>= $MIN_VERSION_NATIVE)"
+      else
+        echo "native anthropic:  $(c_yellow no) (< $MIN_VERSION_NATIVE — upgrade or use ccr)"
+      fi
+    fi
+  else
+    echo "ollama binary:     $(c_red missing) — run \`mythos-ollama install\` for instructions"
+  fi
+
+  if endpoint_reachable "$OLLAMA_HOST_DEFAULT"; then
+    echo "endpoint:          $(c_green reachable) ($OLLAMA_HOST_DEFAULT)"
+    if command -v jq >/dev/null 2>&1; then
+      local n
+      n="$(curl -fsS -m 1 "$OLLAMA_HOST_DEFAULT/api/tags" 2>/dev/null | jq -r '.models | length' 2>/dev/null || echo 0)"
+      echo "installed models:  $n"
+    fi
+  else
+    echo "endpoint:          $(c_red unreachable) ($OLLAMA_HOST_DEFAULT) — start daemon: \`ollama serve\`"
+  fi
+
+  local base="${ANTHROPIC_BASE_URL:-}"
+  if [ -z "$base" ]; then
+    echo "ANTHROPIC_BASE_URL: $(c_dim unset) — using first-party Anthropic"
+  elif [[ "$base" == http://localhost:11434* ]] || [[ "$base" == http://127.0.0.1:11434* ]]; then
+    echo "ANTHROPIC_BASE_URL: $(c_green ollama) ($base)"
+  else
+    echo "ANTHROPIC_BASE_URL: $(c_yellow other) ($base)"
+  fi
+  echo
+  echo "Skill: skills/ollama-integration.md"
+}
+
+cmd_models() {
+  local json_mode=0
+  [ "${1:-}" = "--json" ] && json_mode=1
+  if ! endpoint_reachable "$OLLAMA_HOST_DEFAULT"; then
+    echo "endpoint unreachable: $OLLAMA_HOST_DEFAULT" >&2
+    return 2
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "jq is required to format model list" >&2; return 3
+  fi
+  local raw
+  raw="$(curl -fsS -m 2 "$OLLAMA_HOST_DEFAULT/api/tags" 2>/dev/null)" || {
+    echo "failed to fetch models" >&2; return 4
+  }
+  if [ "$json_mode" -eq 1 ]; then
+    echo "$raw" | jq -c '{models: [.models[]? | {name, size_gb: ((.size/1e9*10|round)/10), family: (.details.family // "?")}]}'
+  else
+    echo "$raw" | jq -r '.models[]? | "\(.name)\t\((.size/1e9*10|round)/10)GB\t\(.details.family // "?")"' \
+      | awk -F'\t' 'BEGIN{printf "%-30s %-10s %s\n","NAME","SIZE","FAMILY"} {printf "%-30s %-10s %s\n",$1,$2,$3}'
+  fi
+}
+
+cmd_install() {
+  cat <<'EOF'
+── ollama install (DOES NOT EXECUTE — copy & run yourself) ──
+
+macOS (Homebrew, recommended):
+  brew install ollama
+  brew services start ollama       # or `ollama serve` in a separate shell
+
+macOS / Linux (official one-liner — review before running):
+  curl -fsSL https://ollama.com/install.sh | sh
+
+After install, verify with:
+  mythos-ollama status
+
+Pull a code-capable model (large download — pick one):
+  ollama pull qwen3.6:latest        # ~24GB, strong on code, long ctx
+  ollama pull qwen3.5               # smaller fallback
+  ollama pull glm-5                 # alternative
+
+mythos-ollama will NOT run any of these for you. Review, then paste.
+EOF
+}
+
+cmd_enable() {
+  if [ -z "$OLLAMA_BIN" ]; then
+    echo "ollama not installed — run 'mythos-ollama install' first" >&2; return 2
+  fi
+  if ! endpoint_reachable "$OLLAMA_HOST_DEFAULT"; then
+    echo "ollama endpoint unreachable — start daemon: \`ollama serve\`" >&2; return 4
+  fi
+  cat <<EOF
+── enable Ollama for this shell (copy & paste) ──
+
+  export ANTHROPIC_AUTH_TOKEN=ollama
+  export ANTHROPIC_API_KEY=""
+  export ANTHROPIC_BASE_URL=$OLLAMA_HOST_DEFAULT
+
+Then start Claude Code against a local model:
+
+  claude --model qwen3.6:latest
+
+Verify with:
+  mythos-ollama status
+
+To revert: open a new shell, or run 'mythos-ollama disable'.
+EOF
+}
+
+cmd_disable() {
+  cat <<'EOF'
+── disable Ollama routing (copy & paste) ──
+
+  unset ANTHROPIC_AUTH_TOKEN
+  unset ANTHROPIC_API_KEY
+  unset ANTHROPIC_BASE_URL
+
+Next 'claude' invocation will use first-party Anthropic again.
+EOF
+}
+
+cmd_pull() {
+  local model="${1:-}"
+  if [ -z "$model" ]; then
+    echo "usage: mythos-ollama pull <model>" >&2; return 1
+  fi
+  cat <<EOF
+── pull model (DOES NOT EXECUTE — copy & run yourself) ──
+
+  ollama pull $model
+
+This is a large download; mythos-ollama will not run it for you.
+EOF
+}
+
+cmd_recommend() {
+  cat <<EOF
+── recommended Ollama models for Claude Code workers ──
+
+Claude Code requires >=${MIN_CONTEXT_TOKENS}t context. These models meet it
+AND have proven code performance (Ollama official + community 2026):
+
+  qwen3.6:latest      Strong on code, long context, ~24GB
+  qwen3.5             Smaller variant, still code-capable
+  glm-5               General + code, good throughput
+  kimi-k2.5:cloud     Cloud-routed via Ollama (paid; quality high)
+
+Smaller models (qwen3:8b, llama3 7B, etc.) DO NOT meet the 64k ctx floor
+reliably — keep them for ad-hoc local use, not fleet workers.
+
+Pull with:  ollama pull <name>     (mythos-ollama does not auto-pull)
+Use with:  bin/mythos-fleet dispatch --ollama --model <name> "<task>"
+
+Quality reminder: Ollama workers are for boilerplate, refactor passes, and
+summarization. Keep architecture / security / long-horizon work on Anthropic.
+See: skills/ollama-integration.md
+EOF
+}
+
+cmd_probe() {
+  if endpoint_reachable "$OLLAMA_HOST_DEFAULT"; then
+    echo "reachable: $OLLAMA_HOST_DEFAULT"
+    return 0
+  else
+    echo "unreachable: $OLLAMA_HOST_DEFAULT" >&2
+    return 1
+  fi
+}
+
+case "${1:-help}" in
+  status)    cmd_status ;;
+  models)    shift; cmd_models "$@" ;;
+  install)   cmd_install ;;
+  enable)    cmd_enable ;;
+  disable)   cmd_disable ;;
+  pull)      shift; cmd_pull "$@" ;;
+  recommend) cmd_recommend ;;
+  probe)     cmd_probe ;;
+  -h|--help|help) usage ;;
+  *) echo "unknown subcommand: $1" >&2; usage >&2; exit 1 ;;
+esac
