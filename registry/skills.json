@@ -207,6 +207,18 @@
       "version": "5.4.0",
       "license": "MIT",
       "verified": true
+    },
+    {
+      "id": "free-claude-code-assessment",
+      "name": "Free Claude Code — Honest Assessment",
+      "summary": "E/D/C/S-tiered, citation-backed verdict on every notable 'free claude code' project. Routes vs. real Claude, free-tier reality, OAuth-proxy safety, when to use as fleet workers.",
+      "tags": ["meta", "routing", "trust", "assessment"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": "skills/free-claude-code-assessment.md" },
+      "install_path": "skills/free-claude-code-assessment.md",
+      "version": "5.5.0",
+      "license": "MIT",
+      "verified": true
     }
   ]
 }

@@ -61,6 +61,7 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 | `skills/tot.md` | Tree-of-Thoughts state on disk for branching decisions |
 | `skills/terse-mode.md` | Output-token reduction (~65%): no preamble, no recap, final state only |
 | `skills/multi-provider-routing.md` | Run Claude Code against OpenRouter/DeepSeek/Ollama/Gemini via claude-code-router |
+| `skills/free-claude-code-assessment.md` | E/D/C/S verdict on "free claude code" projects + OAuth-proxy safety |
 
 ---
 
@@ -79,11 +80,13 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 | `bin/mythos-agent` | Marketplace CLI for subagents (same surface as `mythos-skill`). |
 | `bin/mythos-route` | Status/guidance for `claude-code-router` (multi-provider). Read-only — never flips the switch for you. |
 | `bin/mythos-tokens` | Per-session token accounting from Claude Code transcripts. `--json` for CI. |
+| `bin/mythos-fleet` | Multi-worker orchestrator using `claude -p --bare`. Safe defaults (read-only, budget cap, no auto-merge). |
 | `/marketplace` | Browse + install curated skills & agents from `registry/`. |
 | `/skill-install <id>` | Install a single skill (or `--tag` for bulk). |
 | `/agent-install <id>` | Install a single subagent (or `--tag` for bulk). |
 | `/terse` | Activate terse mode (no preamble/recap/narration) — ~65% output token reduction. |
 | `/route` | Inspect / guide multi-provider routing (OpenRouter, DeepSeek, Ollama, Gemini). |
+| `/fleet` | Dispatch + collect parallel `claude -p` workers (optionally routed via `ccr`). |
 | `/mythosrun [task]` | Full autonomous loop (research → plan → execute → verify → learn) |
 | `/assimilate` | Run this when injected into a new repo. Agent scans the host, researches its domain, and adapts. |
 | `/deep-evolve` | The Ultimate Self-Improvement Loop. Unleash the monster. |
@@ -106,19 +109,9 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 
 ## L4. DELEGATION — Subagents (`.claude/agents/<name>.md`)
 
-Use subagents liberally to keep main context clean. Invoke via the Task tool with `subagent_type=<name>`.
+Invoke via Task tool with `subagent_type=<name>`. Models: 8 on **opus** for reasoning/judgment, `researcher` on **sonnet** (fetch+summarize is I/O-bound).
 
-| Agent | Use For |
-|-------|---------|
-| `planner` | Decompose complex tasks into disjoint, dependency-tagged tasks |
-| `researcher` | Deep web research, SOTA analysis, citation-backed findings |
-| `implementer` | Pure code implementation against a planner spec |
-| `reviewer` | Independent adversarial code/design review |
-| `tester` | Test authoring + run; regression test for bug fixes |
-| `architect` | System design, ADR drafts |
-| `debugger` | Root-cause analysis |
-| `optimizer` | Performance hotspots |
-| `security-auditor`| OWASP/CVE/secret scans |
+`planner` (DAG decomposition) · `architect` (design+ADR) · `researcher` (web/SOTA) · `implementer` (code from spec) · `tester` (tests + regression) · `reviewer` (adversarial) · `debugger` (root cause) · `optimizer` (perf) · `security-auditor` (OWASP/CVE).
 
 ---
 

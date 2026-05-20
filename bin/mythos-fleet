@@ -1,0 +1,334 @@
+#!/usr/bin/env bash
+# mythos-fleet — Multi-worker Claude Code orchestration via headless mode.
+#
+# Pattern (per Anthropic principle "separate judge from builder"):
+#   • Main session = orchestrator (you, on first-party Anthropic).
+#   • Workers     = `claude -p --bare` subprocesses, optionally routed
+#                   via claude-code-router to cheap/free providers.
+#   • Each worker writes its output to .claude/state/fleet/<id>.{json,out,err}.
+#   • The orchestrator reads + reviews + integrates — fleet NEVER auto-merges.
+#
+# Safety contract:
+#   • Workers always run with --bare and --no-session-persistence.
+#   • Mandatory --max-budget-usd (default $1.00).
+#   • Default allowedTools is READ-ONLY (Read,Grep,Glob).
+#   • Writing or Bash require explicit --allow-tools override.
+#   • Routing via --provider requires `ccr` to already be running.
+
+set -euo pipefail
+
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+FLEET_DIR="$PROJECT_DIR/.claude/state/fleet"
+CCR_DEFAULT_URL="http://127.0.0.1:3456"
+DEFAULT_BUDGET="1.00"
+DEFAULT_TOOLS="Read,Grep,Glob"
+DEFAULT_MODEL="sonnet"
+DEFAULT_PERM="dontAsk"
+
+mkdir -p "$FLEET_DIR"
+
+c_red()    { printf '\033[31m%s\033[0m' "$*"; }
+c_green()  { printf '\033[32m%s\033[0m' "$*"; }
+c_yellow() { printf '\033[33m%s\033[0m' "$*"; }
+c_dim()    { printf '\033[2m%s\033[0m'  "$*"; }
+
+usage() {
+  cat <<EOF
+mythos-fleet — multi-worker Claude Code orchestration
+
+Subcommands:
+  dispatch "<task>" [opts]   Spawn a worker, return its <id>
+  status [--id <id>]         Show worker status (single or all)
+  list                       List all worker ids
+  collect [--id <id>] [--wait] [--json]
+                             Read a worker's output
+  clear [--id <id>] [--all]  Remove worker artifacts
+  providers                  List providers from ~/.claude-code-router/config.json
+  help                       This help
+
+dispatch options:
+  --id <id>           Worker id (default: auto-generated)
+  --model <m>         Model alias or full id (default: $DEFAULT_MODEL)
+  --provider <name>   Route via claude-code-router (requires ccr running)
+  --budget <usd>      Max spend, e.g. 0.50 (default: $DEFAULT_BUDGET)
+  --allow-tools <l>   Comma-separated tools (default: read-only "$DEFAULT_TOOLS")
+  --perm <mode>       Permission mode (default: $DEFAULT_PERM)
+  --add-dir <path>    Extra dir the worker may access (repeatable via comma)
+  --cwd <path>        Worker working directory (default: \$PWD)
+
+Safety contract:
+  • Workers run with --bare and --no-session-persistence.
+  • Default tools are read-only.
+  • Budget cap is MANDATORY.
+  • Fleet never auto-merges output into your project — you review and integrate.
+
+See: skills/free-claude-code-assessment.md, skills/multi-provider-routing.md
+EOF
+}
+
+gen_id() {
+  printf 'w-%s-%s' "$(date +%s)" "$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 6)"
+}
+
+ccr_running() {
+  local url="${1:-$CCR_DEFAULT_URL}"
+  curl -fsS -o /dev/null -m 1 "$url/" 2>/dev/null
+}
+
+cmd_dispatch() {
+  local task="" id="" model="$DEFAULT_MODEL" provider=""
+  local budget="$DEFAULT_BUDGET" tools="$DEFAULT_TOOLS" perm="$DEFAULT_PERM"
+  local add_dirs="" cwd="$PWD"
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --id)          id="$2";       shift 2 ;;
+      --model)       model="$2";    shift 2 ;;
+      --provider)    provider="$2"; shift 2 ;;
+      --budget)      budget="$2";   shift 2 ;;
+      --allow-tools) tools="$2";    shift 2 ;;
+      --perm)        perm="$2";     shift 2 ;;
+      --add-dir)     add_dirs="$2"; shift 2 ;;
+      --cwd)         cwd="$2";      shift 2 ;;
+      -h|--help)     usage; return 0 ;;
+      *)
+        if [ -z "$task" ]; then task="$1"; else
+          echo "unexpected arg: $1" >&2; return 1
+        fi
+        shift ;;
+    esac
+  done
+
+  if [ -z "$task" ]; then
+    echo "dispatch: task required" >&2
+    echo "usage: mythos-fleet dispatch \"<task>\" [options]" >&2
+    return 1
+  fi
+
+  [ -z "$id" ] && id="$(gen_id)"
+  local meta="$FLEET_DIR/$id.json"
+  if [ -e "$meta" ]; then
+    echo "id collision: $id (already exists)" >&2; return 1
+  fi
+
+  command -v claude >/dev/null 2>&1 || {
+    echo "claude not in PATH — install @anthropic-ai/claude-code" >&2; return 2
+  }
+
+  local env_prefix=""
+  if [ -n "$provider" ]; then
+    if ! ccr_running "$CCR_DEFAULT_URL"; then
+      echo "ccr not running at $CCR_DEFAULT_URL — start it with 'ccr start' first" >&2
+      return 4
+    fi
+    env_prefix="ANTHROPIC_BASE_URL=$CCR_DEFAULT_URL"
+  fi
+
+  local started
+  started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  jq -n \
+    --arg id "$id" --arg task "$task" --arg model "$model" --arg provider "$provider" \
+    --arg budget "$budget" --arg tools "$tools" --arg perm "$perm" --arg cwd "$cwd" \
+    --arg started "$started" \
+    '{id:$id, task:$task, model:$model, provider:$provider, budget:($budget|tonumber),
+      allowed_tools:$tools, permission_mode:$perm, cwd:$cwd, started:$started, status:"running"}' \
+    > "$meta"
+
+  local args=(
+    --bare -p "$task"
+    --output-format json
+    --max-budget-usd "$budget"
+    --allowedTools "$tools"
+    --permission-mode "$perm"
+    --no-session-persistence
+    --model "$model"
+  )
+  if [ -n "$add_dirs" ]; then
+    local IFS=','
+    for d in $add_dirs; do args+=(--add-dir "$d"); done
+  fi
+
+  local out="$FLEET_DIR/$id.out"
+  local err="$FLEET_DIR/$id.err"
+  local pidfile="$FLEET_DIR/$id.pid"
+
+  (
+    cd "$cwd"
+    if [ -n "$env_prefix" ]; then
+      env "$env_prefix" claude "${args[@]}" > "$out" 2> "$err"
+    else
+      claude "${args[@]}" > "$out" 2> "$err"
+    fi
+    local rc=$?
+    local finished
+    finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    local status="completed"
+    [ $rc -ne 0 ] && status="failed"
+    local tmp="$meta.tmp"
+    jq --arg s "$status" --arg f "$finished" --argjson rc "$rc" \
+       '. + {status:$s, finished:$f, exit_code:$rc}' "$meta" > "$tmp" && mv "$tmp" "$meta"
+    rm -f "$pidfile"
+  ) &
+  local pid=$!
+  echo "$pid" > "$pidfile"
+  disown 2>/dev/null || true
+
+  echo "$id"
+}
+
+worker_pid() {
+  local id="$1"
+  local pidfile="$FLEET_DIR/$id.pid"
+  [ -f "$pidfile" ] && cat "$pidfile" || echo ""
+}
+
+is_alive() {
+  local pid="$1"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+print_status_row() {
+  local meta="$1"
+  local id task model provider status started finished exit_code
+  id="$(jq -r .id "$meta")"
+  task="$(jq -r '.task | .[0:60]' "$meta")"
+  model="$(jq -r .model "$meta")"
+  provider="$(jq -r '.provider // "anthropic"' "$meta")"
+  status="$(jq -r .status "$meta")"
+  started="$(jq -r .started "$meta")"
+  finished="$(jq -r '.finished // ""' "$meta")"
+  exit_code="$(jq -r '.exit_code // ""' "$meta")"
+
+  local pid
+  pid="$(worker_pid "$id")"
+  if [ "$status" = "running" ] && ! is_alive "$pid"; then
+    status="orphaned"
+  fi
+
+  local color="$(c_dim)"
+  case "$status" in
+    running)   color="$(c_yellow running)" ;;
+    completed) color="$(c_green completed)" ;;
+    failed)    color="$(c_red failed)" ;;
+    orphaned)  color="$(c_red orphaned)" ;;
+  esac
+  printf '%-26s %-10s %-8s %-12s %s\n' "$id" "$color" "$model" "$provider" "$task"
+}
+
+cmd_status() {
+  local target=""
+  if [ $# -gt 0 ] && [ "$1" = "--id" ]; then target="$2"; fi
+
+  if [ -n "$target" ]; then
+    local meta="$FLEET_DIR/$target.json"
+    [ -f "$meta" ] || { echo "no such id: $target" >&2; return 2; }
+    jq . "$meta"
+    return 0
+  fi
+
+  shopt -s nullglob
+  local files=("$FLEET_DIR"/*.json)
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "no workers"
+    return 0
+  fi
+  printf '%-26s %-10s %-8s %-12s %s\n' "ID" "STATUS" "MODEL" "PROVIDER" "TASK"
+  for f in "${files[@]}"; do
+    print_status_row "$f"
+  done
+}
+
+cmd_list() {
+  shopt -s nullglob
+  local files=("$FLEET_DIR"/*.json)
+  [ ${#files[@]} -eq 0 ] && return 0
+  for f in "${files[@]}"; do
+    basename "$f" .json
+  done
+}
+
+cmd_collect() {
+  local target="" wait_mode=0 json_mode=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --id)   target="$2"; shift 2 ;;
+      --wait) wait_mode=1; shift ;;
+      --json) json_mode=1; shift ;;
+      *) echo "unknown arg: $1" >&2; return 1 ;;
+    esac
+  done
+  if [ -z "$target" ]; then
+    shopt -s nullglob
+    local latest
+    latest="$(ls -1t "$FLEET_DIR"/*.json 2>/dev/null | head -1 || true)"
+    [ -n "$latest" ] || { echo "no workers" >&2; return 2; }
+    target="$(basename "$latest" .json)"
+  fi
+  local meta="$FLEET_DIR/$target.json"
+  [ -f "$meta" ] || { echo "no such id: $target" >&2; return 2; }
+
+  if [ $wait_mode -eq 1 ]; then
+    while [ "$(jq -r .status "$meta")" = "running" ]; do sleep 1; done
+  fi
+
+  local out="$FLEET_DIR/$target.out"
+  if [ $json_mode -eq 1 ]; then
+    if [ -s "$out" ]; then
+      jq -nc --slurpfile m "$meta" --slurpfile o "$out" '{meta:$m[0], output:$o[0]}' 2>/dev/null \
+        || jq -nc --slurpfile m "$meta" --rawfile raw "$out" '{meta:$m[0], output_raw:$raw}'
+    else
+      jq -nc --slurpfile m "$meta" '{meta:$m[0], output:null}'
+    fi
+  else
+    jq . "$meta"
+    echo "── stdout ──"
+    [ -s "$out" ] && cat "$out" || echo "(empty)"
+    local err="$FLEET_DIR/$target.err"
+    if [ -s "$err" ]; then
+      echo "── stderr ──"; cat "$err"
+    fi
+  fi
+}
+
+cmd_clear() {
+  local target="" all=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --id)  target="$2"; shift 2 ;;
+      --all) all=1; shift ;;
+      *) echo "unknown arg: $1" >&2; return 1 ;;
+    esac
+  done
+  if [ $all -eq 1 ]; then
+    rm -f "$FLEET_DIR"/*.json "$FLEET_DIR"/*.out "$FLEET_DIR"/*.err "$FLEET_DIR"/*.pid
+    echo "cleared all"
+    return 0
+  fi
+  if [ -z "$target" ]; then
+    echo "specify --id <id> or --all" >&2; return 1
+  fi
+  rm -f "$FLEET_DIR/$target".{json,out,err,pid}
+  echo "cleared $target"
+}
+
+cmd_providers() {
+  local route_bin
+  route_bin="$(dirname "$0")/mythos-route"
+  if [ -x "$route_bin" ]; then
+    "$route_bin" providers
+  else
+    echo "mythos-route not found — list providers from ~/.claude-code-router/config.json manually" >&2
+    return 1
+  fi
+}
+
+case "${1:-help}" in
+  dispatch)   shift; cmd_dispatch "$@" ;;
+  status)     shift; cmd_status "$@" ;;
+  list)       shift; cmd_list ;;
+  collect)    shift; cmd_collect "$@" ;;
+  clear)      shift; cmd_clear "$@" ;;
+  providers)  cmd_providers ;;
+  -h|--help|help) usage ;;
+  *) echo "unknown subcommand: $1" >&2; usage >&2; exit 1 ;;
+esac

@@ -690,6 +690,58 @@ check "8 subagents on opus (reasoning-heavy)"                    $?
 [ "$sonnet_count" = "1" ]
 check "1 subagent on sonnet (researcher only — fetch+summarize)" $?
 
+# ─── 7f. Fleet Mode ──────────────────────────────────────────────────────────
+section "Fleet Mode"
+
+# 7f.1 binary exists + executable
+[ -x "$P/bin/mythos-fleet" ]; check "+x:    bin/mythos-fleet"      $?
+
+# 7f.2 help mentions key safety terms
+"$P/bin/mythos-fleet" help 2>/dev/null | grep -qi 'safety'
+check "mythos-fleet help mentions safety contract"               $?
+"$P/bin/mythos-fleet" help 2>/dev/null | grep -qi 'bare'
+check "mythos-fleet help mentions --bare"                        $?
+"$P/bin/mythos-fleet" help 2>/dev/null | grep -qi 'budget'
+check "mythos-fleet help mentions --max-budget-usd"              $?
+
+# 7f.3 dispatch without args exits 1
+"$P/bin/mythos-fleet" dispatch >/dev/null 2>&1
+[ $? -eq 1 ]; check "mythos-fleet dispatch without args → exit 1" $?
+
+# 7f.4 status on empty state should not crash
+"$P/bin/mythos-fleet" status >/dev/null 2>&1
+check "mythos-fleet status runs (empty state OK)"                $?
+
+# 7f.5 list runs even with no workers
+"$P/bin/mythos-fleet" list >/dev/null 2>&1
+check "mythos-fleet list runs (empty state OK)"                  $?
+
+# 7f.6 --provider when ccr not running → exit 4
+( unset ANTHROPIC_BASE_URL
+  "$P/bin/mythos-fleet" dispatch "test" --provider openrouter --budget 0.10 >/dev/null 2>&1
+  [ $? -eq 4 ]
+)
+check "mythos-fleet --provider refuses when ccr not running (exit 4)" $?
+
+# 7f.7 skill + slash command files exist
+[ -f "$P/skills/free-claude-code-assessment.md" ]
+check "skills/free-claude-code-assessment.md exists"             $?
+[ -f "$P/.claude/commands/fleet.md" ]
+check ".claude/commands/fleet.md exists"                          $?
+
+# 7f.8 registry contains the new skill
+"$P/bin/mythos-skill" info free-claude-code-assessment 2>/dev/null \
+  | grep -q '"id": "free-claude-code-assessment"'
+check "registry contains free-claude-code-assessment"            $?
+
+# 7f.9 state dir is created on demand
+[ -d "$P/.claude/state/fleet" ]
+check ".claude/state/fleet/ exists"                              $?
+
+# 7f.10 safety: help mentions never auto-merging
+"$P/bin/mythos-fleet" help 2>/dev/null | grep -qi 'never auto-merges'
+check "mythos-fleet help mentions never auto-merges"             $?
+
 # ─── 8. Summary ───────────────────────────────────────────────────────────────
 TOTAL=$((PASS+FAIL))
 printf '\n──────────────────────────────────────\n'

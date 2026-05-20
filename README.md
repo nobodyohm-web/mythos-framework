@@ -4,6 +4,8 @@ A drop-in upgrade for **Claude Code** that turns it into a rigorous, hallucinati
 
 > Core principle (load-bearing): **SEEK → FIND → VERIFY → KEEP WHAT SURVIVES**
 
+**v5.5 — Fleet mode + honest free-claude-code assessment.** Spawn parallel `claude -p --bare` workers from the main session (`bin/mythos-fleet` + `/fleet`) with read-only defaults, mandatory budget cap, and zero auto-merge. Workers optionally route through `claude-code-router` to cheap/free providers. Includes `skills/free-claude-code-assessment.md` — E/D/C/S-tiered, citation-backed verdict on every notable "free claude code" project (the short version: they're not free Claude, they're routers).
+
 **v5.4 — Token optimization + multi-provider routing.** Output verbosity reduction (~65% via `skills/terse-mode.md` + `/terse`), task-aware model routing (8 reasoning agents on Opus, `researcher` on Sonnet for fetch+summarize), per-session token accounting (`bin/mythos-tokens`), and read-only guidance for running Claude Code against OpenRouter/DeepSeek/Ollama/Gemini (`bin/mythos-route` + `/route`).
 
 ---
@@ -128,10 +130,54 @@ claude
 | `bin/mythos-observe`      | Tail the event stream                                               |
 | `bin/mythos-route`        | Status/guidance for `claude-code-router` (multi-provider) — read-only |
 | `bin/mythos-tokens`       | Per-session token accounting (`session` / `all` / `list`, `--json`)  |
+| `bin/mythos-fleet`        | Multi-worker orchestrator via `claude -p --bare` (read-only defaults, budget cap) |
 
 ### Key slash commands
 
-`/marketplace`, `/skill-install`, `/agent-install`, `/terse`, `/route`, `/mythosrun`, `/assimilate`, `/critique`, `/team`, `/swarm`, `/evolve`, `/deep-evolve`, `/benchmark`, `/calibrate`, `/reflect`, `/heal`, `/deepaudit`, `/research`, `/specify`, `/ship`, `/bootstrap`, `/diagnose`, `/learn`.
+`/marketplace`, `/skill-install`, `/agent-install`, `/terse`, `/route`, `/fleet`, `/mythosrun`, `/assimilate`, `/critique`, `/team`, `/swarm`, `/evolve`, `/deep-evolve`, `/benchmark`, `/calibrate`, `/reflect`, `/heal`, `/deepaudit`, `/research`, `/specify`, `/ship`, `/bootstrap`, `/diagnose`, `/learn`.
+
+---
+
+## Fleet mode — parallel `claude -p` workers
+
+A main Claude Code session is serial by design. **Fleet mode** spawns N parallel worker subprocesses for genuinely independent subtasks while the orchestrator (you, on Opus) stays in charge of judgment and integration.
+
+```bash
+# Three independent docstring jobs, all read-only by default
+id1=$(bin/mythos-fleet dispatch "Add JSDoc to every export in src/auth.ts" --allow-tools Read,Edit --budget 0.30)
+id2=$(bin/mythos-fleet dispatch "Add JSDoc to every export in src/db.ts"   --allow-tools Read,Edit --budget 0.30)
+id3=$(bin/mythos-fleet dispatch "Add JSDoc to every export in src/api.ts"  --allow-tools Read,Edit --budget 0.30)
+
+bin/mythos-fleet status                          # see them progress
+bin/mythos-fleet collect --id "$id1" --wait      # read output (JSON: result + total_cost_usd)
+bin/mythos-fleet clear --all                     # cleanup
+```
+
+### Optional: route workers through `claude-code-router`
+
+If `ccr` is running, workers can be routed to OpenRouter/DeepSeek/Ollama/etc. for cost. The main orchestrator stays on first-party Anthropic for reasoning.
+
+```bash
+bin/mythos-fleet dispatch "Generate boilerplate getters/setters for src/models/*.go" \
+  --provider openrouter --model deepseek/deepseek-chat --budget 0.10 --allow-tools Read,Edit
+```
+
+If `ccr` isn't running, dispatch refuses with exit 4 — **never silently runs on first-party billing when you asked for routing.**
+
+### Safety contract
+
+| Constraint | Enforced |
+|---|---|
+| `--bare` mode (no hooks/MCP/CLAUDE.md auto-load) | always |
+| `--no-session-persistence` | always |
+| Default `--allowedTools` is read-only (`Read,Grep,Glob`) | default |
+| `--max-budget-usd $1.00` cap | mandatory (default; user can lower or raise) |
+| No auto-merge of worker output | by design — orchestrator reviews + integrates |
+| `--provider` requires `ccr` running | HEAD probe; exit 4 on failure |
+
+### Is "free claude code" interesting?
+
+Short answer: **no, but the idea works** — see `skills/free-claude-code-assessment.md` for the full E/D/C/S-tiered breakdown. The projects under that name are routing proxies to non-Anthropic providers (NVIDIA NIM, DeepSeek, Ollama, etc.). Some providers have real free tiers (NIM: 40 req/min, Ollama: local), but the model quality is materially below Claude on architecture, debugging, and security work. Use cheap workers for boilerplate; keep judgment on Anthropic.
 
 ---
 
@@ -202,10 +248,10 @@ A single command verifies the whole system end-to-end:
 
 ```bash
 bash hooks/test-mythos.sh
-# → ✓ ALL CLEAR — 238/238 checks passed
+# → ✓ ALL CLEAR — 251/251 checks passed
 ```
 
-Tests cover: file layout, hook wiring, JSON validity, frontmatter on every agent, guard behavior under crafted inputs, marketplace CLIs, registry shape, dry-run install safety, token-optim CLIs (`mythos-route`, `mythos-tokens`), and the subagent model policy (8 on Opus, 1 on Sonnet).
+Tests cover: file layout, hook wiring, JSON validity, frontmatter on every agent, guard behavior under crafted inputs, marketplace CLIs, registry shape, dry-run install safety, token-optim CLIs (`mythos-route`, `mythos-tokens`), the subagent model policy (8 on Opus, 1 on Sonnet), and the fleet safety contract (help text, dispatch error paths, exit codes, env isolation, state-dir lifecycle).
 
 ---
 

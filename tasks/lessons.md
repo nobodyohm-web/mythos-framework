@@ -51,3 +51,8 @@
 **Mistake:** `grep -Eq '[A-Za-z0-9+/]{256,}'` emitted `invalid repetition count(s)` on macOS during prompt-injection-guard tests.
 **Root cause:** BSD grep's POSIX implementation enforces `RE_DUP_MAX` (typically 255). The exact ceiling varies across releases.
 **Rule:** Keep bounded-repetition counts ≤ 200 in portable scripts, or switch to `awk`/`python3` for that single check. Document the cap inline so it doesn't get bumped again.
+
+### 2026-05-20 — Empty bash arrays + `set -u` + `"${arr[@]}"` iteration on bash 3.2
+**Mistake:** `cmd_list` in `bin/mythos-fleet` failed on empty state with "files: unbound variable" when iterating `"${files[@]}"` after a `shopt -s nullglob` glob that matched nothing.
+**Root cause:** macOS default bash 3.2 + `set -euo pipefail` treats expansion of an empty array via `"${arr[@]}"` as referencing an unset variable in some contexts (this is one of the historical quirks fixed in bash 4.4+).
+**Rule:** When iterating a possibly-empty glob array under `set -u`, always guard: `[ ${#files[@]} -eq 0 ] && return 0` (or equivalent) BEFORE the `for` loop. Same pattern needed for `${arr[@]:1}`, `${arr[0]}` etc. on empty arrays. Lesson generalizes: any associative or indexed array expansion that might be empty needs a length-check guard on bash 3.2.
