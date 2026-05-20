@@ -1,0 +1,423 @@
+#!/usr/bin/env bash
+# mythos-market — core marketplace engine for skills + agents.
+#
+# Usage (called via thin wrappers):
+#   mythos-market --kind skill  list
+#   mythos-market --kind skill  search <query>
+#   mythos-market --kind skill  info <id>
+#   mythos-market --kind skill  install <id> [--force] [--dry-run]
+#   mythos-market --kind skill  install-all [--tag t1,t2] [--project-type X]
+#   mythos-market --kind skill  verify <id>            # HEAD + (optional) sha256
+#   mythos-market --kind skill  verify-all
+#   mythos-market --kind skill  recommend              # uses bin/mythos-detect
+#   mythos-market --kind skill  add --id ... --repo ... --ref ... --path ...
+#                                  [--name N] [--summary S] [--tags a,b]
+#                                  [--project-types a,b] [--sha256 H]
+#   mythos-market --kind skill  refresh-sha <id>       # download + pin sha256
+#
+# Storage:
+#   registry/skills.json
+#   registry/agents.json
+#
+# Install rules:
+#   - github-file → fetched from raw.githubusercontent.com/{repo}/{ref}/{path}
+#   - url         → direct GET (must be raw)
+#   - Validation: HEAD ok → body non-empty → frontmatter check → optional sha256
+#   - Writes atomically: temp file → rename.
+#
+# Exit codes:
+#   0  ok
+#   1  invocation error
+#   2  not-found
+#   3  network/HEAD failed
+#   4  validation failed (frontmatter)
+#   5  integrity failed (sha256 mismatch)
+
+set -uo pipefail
+
+KIND=""
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+REGISTRY_DIR="$PROJECT_DIR/registry"
+TMP_DIR="${TMPDIR:-/tmp}"
+
+# ---------- helpers ----------
+
+die()  { printf "✗ %s\n" "$*" >&2; exit "${2:-1}"; }
+warn() { printf "⚠ %s\n" "$*" >&2; }
+ok()   { printf "✓ %s\n" "$*"; }
+
+need() { command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1"; }
+need jq
+need curl
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+# Parse top-level --kind and shift.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --kind) KIND="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
+[ -n "$KIND" ] || die "--kind {skill|agent} required"
+
+case "$KIND" in
+  skill) REGISTRY="$REGISTRY_DIR/skills.json"; LIST_KEY="skills" ;;
+  agent) REGISTRY="$REGISTRY_DIR/agents.json"; LIST_KEY="agents" ;;
+  *) die "unknown --kind: $KIND" ;;
+esac
+[ -f "$REGISTRY" ] || die "registry not found: $REGISTRY"
+
+# Build raw URL for an entry (jq input).
+raw_url_jq='
+  if .source.type == "github-file" then
+    "https://raw.githubusercontent.com/" + .source.repo + "/" + .source.ref + "/" + .source.path
+  elif .source.type == "url" then
+    .source.url
+  else
+    error("unsupported source.type: " + (.source.type // "null"))
+  end
+'
+
+# Get entry JSON by id, or empty.
+entry_by_id() {
+  local id="$1"
+  jq --arg id "$id" --arg k "$LIST_KEY" '.[$k][] | select(.id == $id)' "$REGISTRY"
+}
+
+# Validate frontmatter / structure of a downloaded file.
+#   skill: file non-empty AND (starts with `---` YAML OR `# ` heading)
+#   agent: file starts with `---` YAML AND contains `name:` and `description:` keys
+validate_file() {
+  local file="$1" kind="$2"
+  [ -s "$file" ] || { echo "empty file"; return 4; }
+  if [ "$kind" = "agent" ]; then
+    head -1 "$file" | grep -q '^---$' || { echo "missing YAML frontmatter"; return 4; }
+    awk '/^---$/{c++; if (c==2) exit} c==1 && /^name:/{n=1} c==1 && /^description:/{d=1} END{exit !(n && d)}' "$file" \
+      || { echo "frontmatter missing name: or description:"; return 4; }
+  else
+    head -5 "$file" | grep -Eq '^(---|# )' || { echo "no markdown heading or YAML frontmatter"; return 4; }
+  fi
+  return 0
+}
+
+# ---------- commands ----------
+
+cmd_list() {
+  local fmt="${1:-table}"
+  if [ "$fmt" = "json" ]; then
+    jq --arg k "$LIST_KEY" '.[$k]' "$REGISTRY"
+    return
+  fi
+  printf "%-22s  %-9s  %-8s  %s\n" "ID" "VERSION" "VERIFIED" "SUMMARY"
+  printf "%-22s  %-9s  %-8s  %s\n" "----------------------" "---------" "--------" "-------"
+  jq -r --arg k "$LIST_KEY" '.[$k][] | [.id, .version, (.verified|tostring), .summary] | @tsv' "$REGISTRY" \
+    | while IFS=$'\t' read -r id ver verified summary; do
+        printf "%-22s  %-9s  %-8s  %s\n" "$id" "$ver" "$verified" "$summary"
+      done
+}
+
+cmd_search() {
+  local q="${1:-}"; [ -n "$q" ] || die "search needs a query"
+  jq -r --arg k "$LIST_KEY" --arg q "$q" '
+    .[$k][]
+    | select(
+        (.id|ascii_downcase|contains($q|ascii_downcase))
+        or (.name|ascii_downcase|contains($q|ascii_downcase))
+        or (.summary|ascii_downcase|contains($q|ascii_downcase))
+        or ((.tags // [])|map(ascii_downcase)|any(contains($q|ascii_downcase)))
+      )
+    | [.id, .name, .summary] | @tsv
+  ' "$REGISTRY" | while IFS=$'\t' read -r id name summary; do
+      printf "• %-22s %s — %s\n" "$id" "$name" "$summary"
+    done
+}
+
+cmd_info() {
+  local id="${1:-}"; [ -n "$id" ] || die "info needs an id"
+  local e; e="$(entry_by_id "$id")"
+  [ -n "$e" ] || die "$KIND '$id' not found in registry" 2
+  echo "$e" | jq .
+  echo
+  echo "Raw URL:"
+  echo "$e" | jq -r "$raw_url_jq" | sed 's/^/  /'
+}
+
+# Resolve raw URL for an id, printing on stdout.
+resolve_url() {
+  local id="$1"
+  local e; e="$(entry_by_id "$id")"
+  [ -n "$e" ] || die "$KIND '$id' not found in registry" 2
+  echo "$e" | jq -r "$raw_url_jq"
+}
+
+# HEAD probe — return 0 if reachable + 200.
+http_head_ok() {
+  local url="$1"
+  local code
+  code="$(curl -sSL -o /dev/null -w '%{http_code}' -I --max-time 15 "$url")" || return 3
+  [ "$code" = "200" ]
+}
+
+cmd_verify() {
+  local id="${1:-}"; [ -n "$id" ] || die "verify needs an id (or use verify-all)"
+  local e; e="$(entry_by_id "$id")"
+  [ -n "$e" ] || die "$KIND '$id' not found" 2
+  local url; url="$(echo "$e" | jq -r "$raw_url_jq")"
+  echo "→ HEAD $url"
+  http_head_ok "$url" || { warn "HEAD failed"; return 3; }
+  local pinned; pinned="$(echo "$e" | jq -r '.sha256 // empty')"
+  if [ -n "$pinned" ]; then
+    local tmp; tmp="$(mktemp "$TMP_DIR/mythos-verify.XXXXXX")"
+    curl -sSL --max-time 30 -o "$tmp" "$url" || { rm -f "$tmp"; return 3; }
+    local got; got="$(sha256_of "$tmp")"
+    rm -f "$tmp"
+    if [ "$got" != "$pinned" ]; then
+      warn "sha256 mismatch: pinned=$pinned got=$got"
+      return 5
+    fi
+    ok "sha256 verified ($got)"
+  else
+    ok "reachable (no sha256 pin)"
+  fi
+}
+
+cmd_verify_all() {
+  local fails=0
+  jq -r --arg k "$LIST_KEY" '.[$k][].id' "$REGISTRY" | while read -r id; do
+    if cmd_verify "$id" >/dev/null 2>&1; then
+      ok "$id"
+    else
+      warn "$id — verification failed"
+      fails=$((fails+1))
+    fi
+  done
+  return 0
+}
+
+cmd_install() {
+  local id="" force=0 dry=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --force) force=1; shift ;;
+      --dry-run) dry=1; shift ;;
+      *) id="$1"; shift ;;
+    esac
+  done
+  [ -n "$id" ] || die "install needs an id"
+
+  local e; e="$(entry_by_id "$id")"
+  [ -n "$e" ] || die "$KIND '$id' not found in registry" 2
+
+  local url install_path pinned
+  url="$(echo "$e" | jq -r "$raw_url_jq")"
+  install_path="$(echo "$e" | jq -r '.install_path')"
+  pinned="$(echo "$e" | jq -r '.sha256 // empty')"
+
+  local dest="$PROJECT_DIR/$install_path"
+  if [ -e "$dest" ] && [ "$force" -eq 0 ]; then
+    warn "exists: $install_path (use --force to overwrite)"
+    return 0
+  fi
+
+  echo "→ fetching: $url"
+  if [ "$dry" -eq 1 ]; then
+    ok "[dry-run] would install to $install_path"
+    return 0
+  fi
+
+  http_head_ok "$url" || die "HEAD probe failed for $url" 3
+
+  local tmp; tmp="$(mktemp "$TMP_DIR/mythos-install.XXXXXX")"
+  curl -sSL --max-time 60 -o "$tmp" "$url" || { rm -f "$tmp"; die "download failed" 3; }
+
+  local err
+  if ! err="$(validate_file "$tmp" "$KIND" 2>&1)"; then
+    rm -f "$tmp"; die "validation failed: $err" 4
+  fi
+
+  if [ -n "$pinned" ]; then
+    local got; got="$(sha256_of "$tmp")"
+    if [ "$got" != "$pinned" ]; then
+      rm -f "$tmp"; die "sha256 mismatch: pinned=$pinned got=$got" 5
+    fi
+  fi
+
+  mkdir -p "$(dirname "$dest")"
+  mv "$tmp" "$dest"
+  ok "installed $KIND '$id' → $install_path"
+}
+
+cmd_install_all() {
+  local tag_filter="" pt_filter=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --tag) tag_filter="$2"; shift 2 ;;
+      --project-type) pt_filter="$2"; shift 2 ;;
+      *) die "unknown flag for install-all: $1" ;;
+    esac
+  done
+
+  local ids
+  ids="$(jq -r --arg k "$LIST_KEY" --arg tag "$tag_filter" --arg pt "$pt_filter" '
+    .[$k][]
+    | (
+        ($tag == "" or ((.tags // []) | any(. == $tag)))
+        and ($pt == "" or ((.project_types // []) | any(. == $pt or . == "*")))
+      ) as $match
+    | select($match)
+    | .id
+  ' "$REGISTRY")"
+
+  [ -n "$ids" ] || { warn "no entries matched"; return 0; }
+  echo "$ids" | while read -r id; do
+    [ -n "$id" ] && cmd_install "$id" --force
+  done
+}
+
+cmd_recommend() {
+  local detect="$PROJECT_DIR/bin/mythos-detect"
+  local tags=""
+  if [ -x "$detect" ]; then
+    tags="$("$detect" --tags 2>/dev/null || true)"
+  fi
+  if [ -z "$tags" ]; then
+    warn "no project tags detected — showing all universal entries"
+    tags="*"
+  else
+    echo "→ detected project tags: $tags"
+  fi
+
+  printf "\nRecommended ${KIND}s:\n"
+  for t in $tags; do
+    jq -r --arg k "$LIST_KEY" --arg t "$t" '
+      .[$k][]
+      | select((.project_types // []) | any(. == $t or . == "*"))
+      | [.id, .summary] | @tsv
+    ' "$REGISTRY" | while IFS=$'\t' read -r id summary; do
+        printf "  • %-22s %s\n" "$id" "$summary"
+      done
+  done | sort -u
+}
+
+cmd_add() {
+  local id="" name="" summary="" repo="" ref="main" path=""
+  local tags="" project_types="*" sha256="" url=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --id) id="$2"; shift 2 ;;
+      --name) name="$2"; shift 2 ;;
+      --summary) summary="$2"; shift 2 ;;
+      --repo) repo="$2"; shift 2 ;;
+      --ref) ref="$2"; shift 2 ;;
+      --path) path="$2"; shift 2 ;;
+      --tags) tags="$2"; shift 2 ;;
+      --project-types) project_types="$2"; shift 2 ;;
+      --sha256) sha256="$2"; shift 2 ;;
+      --url) url="$2"; shift 2 ;;
+      *) die "unknown flag for add: $1" ;;
+    esac
+  done
+  [ -n "$id" ] || die "--id required"
+  [ -n "$name" ] || name="$id"
+  [ -n "$summary" ] || summary="(no summary)"
+
+  # Detect duplicate.
+  if [ -n "$(entry_by_id "$id")" ]; then
+    die "$KIND '$id' already exists in registry"
+  fi
+
+  local source_json
+  if [ -n "$url" ]; then
+    source_json="$(jq -nc --arg u "$url" '{type:"url", url:$u}')"
+    [ -n "$path" ] || path="${id}.md"
+  else
+    [ -n "$repo" ] && [ -n "$path" ] || die "either --url or (--repo AND --path) required"
+    source_json="$(jq -nc --arg repo "$repo" --arg ref "$ref" --arg path "$path" \
+      '{type:"github-file", repo:$repo, ref:$ref, path:$path}')"
+  fi
+
+  local install_path
+  if [ "$KIND" = "agent" ]; then
+    install_path=".claude/agents/${id}.md"
+  else
+    install_path="skills/${id}.md"
+  fi
+
+  # Pre-flight: HEAD the URL before persisting.
+  # Wrap source_json under .source so raw_url_jq (which expects an entry) resolves correctly.
+  local resolved_url
+  resolved_url="$(jq -nr --argjson src "$source_json" '{source:$src} | '"$raw_url_jq")"
+  echo "→ pre-flight HEAD: $resolved_url"
+  http_head_ok "$resolved_url" || die "URL unreachable — refusing to add" 3
+
+  # tags / project_types as JSON arrays
+  local tags_json pt_json
+  tags_json="$(echo "$tags" | jq -Rc 'split(",")|map(select(length>0))')"
+  pt_json="$(echo "$project_types" | jq -Rc 'split(",")|map(select(length>0))')"
+
+  local entry
+  entry="$(jq -n \
+    --arg id "$id" \
+    --arg name "$name" \
+    --arg summary "$summary" \
+    --argjson tags "$tags_json" \
+    --argjson project_types "$pt_json" \
+    --argjson source "$source_json" \
+    --arg install_path "$install_path" \
+    --arg sha256 "$sha256" \
+    '{
+      id:$id, name:$name, summary:$summary,
+      tags:$tags, project_types:$project_types,
+      source:$source, install_path:$install_path,
+      version:"user-added", license:"unknown", verified:false
+    }
+    + (if $sha256 == "" then {} else {sha256:$sha256} end)'
+  )"
+
+  local tmp; tmp="$(mktemp "$TMP_DIR/mythos-reg.XXXXXX")"
+  jq --arg k "$LIST_KEY" --argjson e "$entry" '.[$k] += [$e]' "$REGISTRY" > "$tmp"
+  mv "$tmp" "$REGISTRY"
+  ok "added $KIND '$id' to $REGISTRY"
+  warn "verified:false — review the source before installing"
+}
+
+cmd_refresh_sha() {
+  local id="${1:-}"; [ -n "$id" ] || die "refresh-sha needs an id"
+  local url; url="$(resolve_url "$id")"
+  local tmp; tmp="$(mktemp "$TMP_DIR/mythos-sha.XXXXXX")"
+  curl -sSL --max-time 30 -o "$tmp" "$url" || { rm -f "$tmp"; die "download failed" 3; }
+  local sha; sha="$(sha256_of "$tmp")"
+  rm -f "$tmp"
+  local tmp2; tmp2="$(mktemp "$TMP_DIR/mythos-reg.XXXXXX")"
+  jq --arg k "$LIST_KEY" --arg id "$id" --arg sha "$sha" \
+    '(.[$k][] | select(.id == $id)).sha256 = $sha' "$REGISTRY" > "$tmp2"
+  mv "$tmp2" "$REGISTRY"
+  ok "pinned sha256 for '$id': $sha"
+}
+
+# ---------- dispatch ----------
+
+CMD="${1:-list}"; shift || true
+case "$CMD" in
+  list)         cmd_list "$@" ;;
+  search)       cmd_search "$@" ;;
+  info)         cmd_info "$@" ;;
+  install)      cmd_install "$@" ;;
+  install-all)  cmd_install_all "$@" ;;
+  verify)       cmd_verify "$@" ;;
+  verify-all)   cmd_verify_all "$@" ;;
+  recommend)    cmd_recommend "$@" ;;
+  add)          cmd_add "$@" ;;
+  refresh-sha)  cmd_refresh_sha "$@" ;;
+  help|-h|--help)
+    sed -n '2,40p' "$0" >&2
+    ;;
+  *) die "unknown command: $CMD (try: list|search|info|install|install-all|verify|verify-all|recommend|add|refresh-sha)" ;;
+esac

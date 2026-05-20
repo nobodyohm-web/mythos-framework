@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# mythos-detect — detect host project type and emit tags.
+#
+# Usage:
+#   mythos-detect              # human-readable report
+#   mythos-detect --tags       # space-separated tag list (for `mythos-skill recommend`)
+#   mythos-detect --json       # JSON: {"tags":[...],"signals":[{"tag":...,"why":...}]}
+#
+# Portability note: written for bash 3.2 (macOS default) — no associative arrays.
+
+set -uo pipefail
+
+DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+cd "$DIR" || exit 1
+
+# Parallel arrays: tags[i] -> signals[i]
+tags=()
+signals=()
+
+mark() {
+  local tag="$1" why="${2:-found}"
+  local i
+  for i in "${tags[@]:-}"; do
+    [ "$i" = "$tag" ] && return 0
+  done
+  tags+=("$tag")
+  signals+=("$why")
+}
+
+has_file() { [ -e "$1" ]; }
+file_contains() { grep -q "$2" "$1" 2>/dev/null; }
+
+# --- JavaScript / TypeScript ---
+if has_file package.json; then
+  mark node "package.json"
+  if file_contains package.json '"typescript"' || has_file tsconfig.json; then
+    mark typescript "tsconfig.json or deps"
+  fi
+  file_contains package.json '"react"'  && mark react  "react in deps"  || true
+  file_contains package.json '"next"'   && mark next   "next in deps"   || true
+  file_contains package.json '"vue"'    && mark vue    "vue in deps"    || true
+  file_contains package.json '"svelte"' && mark svelte "svelte in deps" || true
+fi
+
+# --- Python ---
+if has_file pyproject.toml || has_file requirements.txt || has_file setup.py || has_file Pipfile; then
+  mark python "python manifest"
+  { file_contains pyproject.toml 'django'  || file_contains requirements.txt '^[Dd]jango'; }  && mark django  "django dep"  || true
+  { file_contains pyproject.toml 'fastapi' || file_contains requirements.txt '^fastapi';  }  && mark fastapi "fastapi dep" || true
+  { file_contains pyproject.toml 'flask'   || file_contains requirements.txt '^[Ff]lask'; }  && mark flask   "flask dep"   || true
+fi
+
+# --- Go ---
+has_file go.mod      && mark go    "go.mod"      || true
+# --- Rust ---
+has_file Cargo.toml  && mark rust  "Cargo.toml"  || true
+
+# --- Ruby ---
+if has_file Gemfile; then
+  mark ruby "Gemfile"
+  file_contains Gemfile '^gem .rails.' && mark rails "Gemfile rails" || true
+fi
+
+# --- JVM ---
+if has_file pom.xml || has_file build.gradle || has_file build.gradle.kts; then
+  mark java "maven/gradle"
+  has_file build.gradle.kts && mark kotlin "gradle kts" || true
+fi
+
+# --- Swift / iOS ---
+if has_file Package.swift; then
+  mark swift "Package.swift"
+elif ls -1d ./*.xcodeproj 2>/dev/null | grep -q .; then
+  mark swift "xcodeproj"
+fi
+
+# --- PHP / Laravel ---
+if has_file composer.json; then
+  mark php "composer.json"
+  file_contains composer.json 'laravel/framework' && mark laravel "laravel dep" || true
+fi
+
+# --- Infra ---
+ls -1 ./*.tf 2>/dev/null | grep -q . && mark terraform "*.tf" || true
+{ has_file Dockerfile || has_file docker-compose.yml || has_file compose.yaml; } && mark docker "Dockerfile" || true
+{ has_file k8s || has_file kubernetes; } && mark k8s "k8s dir" || true
+
+# --- Repo shape ---
+{ has_file packages || has_file apps || has_file pnpm-workspace.yaml || has_file lerna.json; } \
+  && mark monorepo "workspace dirs" || true
+has_file .github/workflows && mark "ci-github" "gh actions" || true
+
+mode="${1:-report}"
+case "$mode" in
+  --tags)
+    printf "%s\n" "${tags[*]:-}"
+    ;;
+  --json)
+    {
+      printf '{"tags":['
+      first=1
+      for t in "${tags[@]:-}"; do
+        [ -z "$t" ] && continue
+        [ $first -eq 0 ] && printf ','
+        printf '"%s"' "$t"
+        first=0
+      done
+      printf '],"signals":['
+      first=1
+      i=0
+      while [ $i -lt ${#tags[@]} ]; do
+        [ $first -eq 0 ] && printf ','
+        # crude escape: rely on tags/signals being plain ASCII
+        printf '{"tag":"%s","why":"%s"}' "${tags[$i]}" "${signals[$i]}"
+        first=0
+        i=$((i+1))
+      done
+      printf ']}\n'
+    }
+    ;;
+  report|*)
+    if [ "${#tags[@]}" -eq 0 ]; then
+      echo "No project signals detected in $DIR"
+      exit 0
+    fi
+    echo "Mythos host detection — $DIR"
+    echo "Tags: ${tags[*]}"
+    echo
+    echo "Signals:"
+    i=0
+    while [ $i -lt ${#tags[@]} ]; do
+      printf "  • %-12s  %s\n" "${tags[$i]}" "${signals[$i]}"
+      i=$((i+1))
+    done
+    ;;
+esac

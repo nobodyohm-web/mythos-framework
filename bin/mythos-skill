@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# mythos-skill — install, search, verify Mythos skills from the registry.
+# Thin wrapper around `mythos-market --kind skill`.
+exec "$(dirname "$0")/mythos-market" --kind skill "$@"

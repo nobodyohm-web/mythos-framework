@@ -1,0 +1,117 @@
+{
+  "$schema": "https://mythos.dev/registry/agents/v1.json",
+  "schema_version": "1.0.0",
+  "registry_updated": "2026-05-20",
+  "description": "Curated catalog of Mythos-compatible subagents. Each entry resolves to a single .md file with YAML frontmatter (name, description, tools, model). Integrity is checked at install time via HEAD probe + optional SHA-256 pin + frontmatter validation.",
+  "agents": [
+    {
+      "id": "planner",
+      "name": "Planner",
+      "summary": "Task decomposition specialist. Decomposes ambiguous goals into dependency-tagged plans for parallel execution.",
+      "tags": ["planning", "core"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": ".claude/agents/planner.md" },
+      "install_path": ".claude/agents/planner.md",
+      "model": "opus",
+      "version": "5.2.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "implementer",
+      "name": "Implementer",
+      "summary": "Pure code implementation against a planner spec. Follows interfaces strictly; does not redesign.",
+      "tags": ["coding", "core"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": ".claude/agents/implementer.md" },
+      "install_path": ".claude/agents/implementer.md",
+      "version": "5.2.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "researcher",
+      "name": "Researcher",
+      "summary": "Deep web research, SOTA analysis, citation-backed findings.",
+      "tags": ["research"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": ".claude/agents/researcher.md" },
+      "install_path": ".claude/agents/researcher.md",
+      "version": "5.2.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "reviewer",
+      "name": "Reviewer",
+      "summary": "Independent adversarial code/design review. Fresh-context judge.",
+      "tags": ["review", "quality"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": ".claude/agents/reviewer.md" },
+      "install_path": ".claude/agents/reviewer.md",
+      "version": "5.2.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "tester",
+      "name": "Tester",
+      "summary": "Test authoring + run; regression test for bug fixes.",
+      "tags": ["testing"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": ".claude/agents/tester.md" },
+      "install_path": ".claude/agents/tester.md",
+      "version": "5.2.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "architect",
+      "name": "Architect",
+      "summary": "System design, ADR drafts, multi-component features.",
+      "tags": ["design"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": ".claude/agents/architect.md" },
+      "install_path": ".claude/agents/architect.md",
+      "version": "5.2.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "debugger",
+      "name": "Debugger",
+      "summary": "Root-cause analysis. Reproduce → isolate → fix → regression test.",
+      "tags": ["debugging"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": ".claude/agents/debugger.md" },
+      "install_path": ".claude/agents/debugger.md",
+      "version": "5.2.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "optimizer",
+      "name": "Optimizer",
+      "summary": "Performance hotspots — profile first, then optimize.",
+      "tags": ["performance"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": ".claude/agents/optimizer.md" },
+      "install_path": ".claude/agents/optimizer.md",
+      "version": "5.2.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "security-auditor",
+      "name": "Security Auditor",
+      "summary": "OWASP/CVE/secret scans. Read-only — never modifies code.",
+      "tags": ["security"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": ".claude/agents/security-auditor.md" },
+      "install_path": ".claude/agents/security-auditor.md",
+      "version": "5.2.0",
+      "license": "MIT",
+      "verified": true
+    }
+  ]
+}

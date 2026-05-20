@@ -78,6 +78,12 @@ Every claim, design decision, or finding must fall into a tier. Do not inflate c
 | `bin/mythos-budget` | Per-session tool-call budget tracker. `--json` for CI integration. |
 | `bin/mythos-gvu` | Generator-Verifier-Updater triad orchestrator (arXiv:2512.02731). |
 | `bin/mythos-tot` | Tree-of-Thoughts state CLI (`init/expand/score/best/show`). |
+| `bin/mythos-detect` | Detect host project stack → tag list for the recommender. |
+| `bin/mythos-skill` | Marketplace CLI for skills (`list/search/info/install/verify/recommend/add`). |
+| `bin/mythos-agent` | Marketplace CLI for subagents (same surface as `mythos-skill`). |
+| `/marketplace` | Browse + install curated skills & agents from `registry/`. |
+| `/skill-install <id>` | Install a single skill (or `--tag` for bulk). |
+| `/agent-install <id>` | Install a single subagent (or `--tag` for bulk). |
 | `/mythosrun [task]` | Full autonomous loop (research → plan → execute → verify → learn) |
 | `/assimilate` | Run this when injected into a new repo. Agent scans the host, researches its domain, and adapts. |
 | `/deep-evolve` | The Ultimate Self-Improvement Loop. Unleash the monster. |

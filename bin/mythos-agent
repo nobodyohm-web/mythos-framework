@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# mythos-agent — install, search, verify Mythos subagents from the registry.
+# Thin wrapper around `mythos-market --kind agent`.
+exec "$(dirname "$0")/mythos-market" --kind agent "$@"
