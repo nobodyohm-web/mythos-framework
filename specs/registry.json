@@ -21,6 +21,16 @@
       "spec": "specs/005-fleet-mode/spec.md",
       "branch": "master",
       "completed_at": "2026-05-20"
+    },
+    {
+      "id": "007",
+      "slug": "reasoning-monster",
+      "title": "Reasoning Monster — Chain-of-Verification + Self-Consistency (v6.0)",
+      "status": "implemented",
+      "confidence": 95,
+      "spec": "specs/007-reasoning-monster/spec.md",
+      "branch": "master",
+      "completed_at": "2026-05-20"
     }
   ]
 }

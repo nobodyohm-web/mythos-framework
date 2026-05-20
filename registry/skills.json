@@ -219,6 +219,30 @@
       "version": "5.5.0",
       "license": "MIT",
       "verified": true
+    },
+    {
+      "id": "chain-of-verification",
+      "name": "Chain-of-Verification (CoVe)",
+      "summary": "Reduce hallucination by auto-generating verification questions, answering them in a fresh context, then revising the draft. Dhuliawala et al. 2023 (arXiv:2309.11495).",
+      "tags": ["reasoning", "verification", "anti-hallucination", "core"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": "skills/chain-of-verification.md" },
+      "install_path": "skills/chain-of-verification.md",
+      "version": "6.0.0",
+      "license": "MIT",
+      "verified": true
+    },
+    {
+      "id": "self-consistency",
+      "name": "Self-Consistency",
+      "summary": "Sample N diverse reasoning paths, majority-vote the final answer. Wang et al. 2022 (arXiv:2203.11171). +17.9% GSM8K, +11% SVAMP.",
+      "tags": ["reasoning", "verification", "voting"],
+      "project_types": ["*"],
+      "source": { "type": "github-file", "repo": "nobodyohm-web/mythos-framework", "ref": "master", "path": "skills/self-consistency.md" },
+      "install_path": "skills/self-consistency.md",
+      "version": "6.0.0",
+      "license": "MIT",
+      "verified": true
     }
   ]
 }

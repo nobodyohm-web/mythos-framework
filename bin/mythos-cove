@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# mythos-cove — Chain-of-Verification state machine.
+#
+# Implements the 4-stage CoVe protocol from Dhuliawala et al., Meta 2023
+# (arXiv:2309.11495, ACL Findings 2024). The point is to make Mythos check
+# its own draft via verification questions answered in a FRESH context, then
+# revise. This measurably reduces hallucination on list-QA, MultiSpanQA, and
+# long-form generation.
+#
+# Topology:
+#   cove-<task>-draft      — tier C — Mythos's initial answer (unverified)
+#   cove-<task>-questions  — tier C — verification Qs Mythos generated about its draft
+#   cove-<task>-answers    — tier D — independent answers (caller MUST use fresh context)
+#   cove-<task>-revised    — tier D — final revised answer
+#
+# Subcommands:
+#   draft   <task-id> <file|->          # stage 1: record initial response
+#   plan    <task-id> <file|->          # stage 2: record verification questions
+#   answer  <task-id> <file|->          # stage 3: record fresh-context answers
+#   revise  <task-id> <file|->          # stage 4: record revised final response
+#   status  <task-id>                   # which stages exist
+#   show    <task-id>                   # print all 4 stages in order
+#
+# This CLI is a STATE MACHINE — it stores artifacts. It does NOT generate
+# questions or answers; the caller (Mythos main / a subagent in a fresh
+# context) is responsible for content. Communicate-through-files (Anthropic
+# Principle #3) means the work survives between stages.
+#
+# Storage: delegates to bin/mythos-blackboard. One CoVe run = 4 topics.
+set -uo pipefail
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+. "$PROJECT_DIR/hooks/_lib.sh"
+BB="$PROJECT_DIR/bin/mythos-blackboard"
+
+usage() { sed -n '2,28p' "$0" >&2; exit 64; }
+print_help() { sed -n '2,28p' "$0"; }
+
+validate_task() {
+  local t="$1"
+  case "$t" in
+    ""|*[!A-Za-z0-9._-]*) echo "❌ invalid task-id: $t" >&2; exit 64 ;;
+  esac
+  # Reserve 15 chars for "cove--questions" — longest suffix.
+  if [ "${#t}" -gt 49 ]; then
+    echo "❌ task-id > 49 chars (blackboard topic cap)" >&2; exit 64
+  fi
+}
+
+read_payload() {
+  local src="$1"
+  if [ "$src" = "-" ]; then
+    cat
+  else
+    [ ! -f "$src" ] && { echo "❌ no such file: $src" >&2; exit 1; }
+    cat "$src"
+  fi
+}
+
+# Wrap raw text/JSON as a blackboard payload. We always send {text: ...} so the
+# blackboard's JSON storage is well-formed even when the input is plain prose.
+wrap_payload() {
+  local raw="$1"
+  if command -v jq >/dev/null 2>&1; then
+    jq -nc --arg t "$raw" '{text: $t}'
+  else
+    esc=$(printf '%s' "$raw" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')
+    printf '{"text":"%s"}' "$esc"
+  fi
+}
+
+write_stage() {
+  local task="$1" stage="$2" tier="$3" src="$4"
+  if ! mythos_lock_acquire "cove-$task" 5000; then
+    echo "❌ could not acquire lock for cove-$task (busy)" >&2; exit 75
+  fi
+  trap "mythos_lock_release \"cove-$task\"" EXIT
+  raw="$(read_payload "$src")"
+  payload="$(wrap_payload "$raw")"
+  printf '%s' "$payload" | "$BB" write "cove-$task-$stage" - --tier="$tier"
+  mythos_lock_release "cove-$task"
+  trap - EXIT
+  printf '✓ cove-%s-%s recorded (tier=%s, %d bytes)\n' "$task" "$stage" "$tier" "${#raw}"
+}
+
+stage_exists() {
+  local task="$1" stage="$2"
+  "$BB" read "cove-$task-$stage" >/dev/null 2>&1
+}
+
+show_stage() {
+  local task="$1" stage="$2"
+  printf '── cove-%s-%s ──\n' "$task" "$stage"
+  local line
+  line="$("$BB" read "cove-$task-$stage" 2>/dev/null || true)"
+  if [ -z "$line" ]; then
+    echo "(no entry)"
+    return
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$line" | jq -r '.payload.text // (.payload | tostring)'
+  else
+    printf '%s\n' "$line"
+  fi
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  draft)
+    task="${1:-}"; src="${2:-}"
+    [ -z "$task" ] || [ -z "$src" ] && usage
+    validate_task "$task"
+    write_stage "$task" draft C "$src"
+    ;;
+  plan)
+    task="${1:-}"; src="${2:-}"
+    [ -z "$task" ] || [ -z "$src" ] && usage
+    validate_task "$task"
+    stage_exists "$task" draft || { echo "❌ no draft for $task — call 'draft' first" >&2; exit 65; }
+    write_stage "$task" questions C "$src"
+    ;;
+  answer)
+    task="${1:-}"; src="${2:-}"
+    [ -z "$task" ] || [ -z "$src" ] && usage
+    validate_task "$task"
+    stage_exists "$task" questions || { echo "❌ no questions for $task — call 'plan' first" >&2; exit 65; }
+    # Tier D because we presume the caller answered in a fresh context (no draft bias).
+    write_stage "$task" answers D "$src"
+    ;;
+  revise)
+    task="${1:-}"; src="${2:-}"
+    [ -z "$task" ] || [ -z "$src" ] && usage
+    validate_task "$task"
+    stage_exists "$task" answers || { echo "❌ no answers for $task — call 'answer' first" >&2; exit 65; }
+    write_stage "$task" revised D "$src"
+    ;;
+  status)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    printf '── CoVe status for %s ──\n' "$task"
+    for stage in draft questions answers revised; do
+      if stage_exists "$task" "$stage"; then
+        printf '  %-10s ✓\n' "$stage"
+      else
+        printf '  %-10s ·\n' "$stage"
+      fi
+    done
+    ;;
+  show)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    for stage in draft questions answers revised; do
+      show_stage "$task" "$stage"
+      echo
+    done
+    ;;
+  ""|-h|--help|help) print_help ;;
+  *) echo "❌ unknown subcommand: $cmd" >&2; usage ;;
+esac

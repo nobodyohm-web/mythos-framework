@@ -62,6 +62,8 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 | `skills/terse-mode.md` | Output-token reduction (~65%): no preamble, no recap, final state only |
 | `skills/multi-provider-routing.md` | Run Claude Code against OpenRouter/DeepSeek/Ollama/Gemini via claude-code-router |
 | `skills/free-claude-code-assessment.md` | E/D/C/S verdict on "free claude code" projects + OAuth-proxy safety |
+| `skills/chain-of-verification.md` | Auto-self-checking: draft → verification Qs → fresh-context answers → revise (CoVe, arXiv:2309.11495) |
+| `skills/self-consistency.md` | Sample N reasoning paths, majority-vote final answer (arXiv:2203.11171). +17.9% GSM8K |
 
 ---
 
@@ -81,6 +83,8 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 | `bin/mythos-route` | Status/guidance for `claude-code-router` (multi-provider). Read-only — never flips the switch for you. |
 | `bin/mythos-tokens` | Per-session token accounting from Claude Code transcripts. `--json` for CI. |
 | `bin/mythos-fleet` | Multi-worker orchestrator using `claude -p --bare`. Safe defaults (read-only, budget cap, no auto-merge). |
+| `bin/mythos-cove` / `/cove` | Chain-of-Verification state machine: `draft / plan / answer / revise / status / show`. |
+| `bin/mythos-sc` / `/sc` | Self-Consistency: `init / record / vote / status / show`. Majority-vote across N traces. |
 | `/marketplace` | Browse + install curated skills & agents from `registry/`. |
 | `/skill-install <id>` | Install a single skill (or `--tag` for bulk). |
 | `/agent-install <id>` | Install a single subagent (or `--tag` for bulk). |

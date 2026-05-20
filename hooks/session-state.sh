@@ -34,16 +34,22 @@ save_state() {
   local LESSONS=0
   [ -f "$PROJECT_DIR/tasks/lessons.md" ] && LESSONS=$(grep -c '^### ' "$PROJECT_DIR/tasks/lessons.md" 2>/dev/null || true)
 
+  # JSON-escape free-text fields. Commit subjects routinely contain quotes,
+  # backslashes, and emoji that would otherwise break the JSON if interpolated raw.
+  local J_BRANCH J_COMMIT J_SID
+  J_BRANCH=$(printf '%s' "$BRANCH" | python3 -c 'import sys,json; sys.stdout.write(json.dumps(sys.stdin.read()))')
+  J_COMMIT=$(printf '%s' "$LAST_COMMIT" | python3 -c 'import sys,json; sys.stdout.write(json.dumps(sys.stdin.read()))')
+  J_SID=$(printf '%s' "${CLAUDE_SESSION_ID:-unknown}" | python3 -c 'import sys,json; sys.stdout.write(json.dumps(sys.stdin.read()))')
   cat > "$SNAPSHOT" <<EOF
 {
   "saved_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
-  "branch": "$BRANCH",
+  "branch": $J_BRANCH,
   "uncommitted_files": $DIRTY,
-  "last_commit": "$LAST_COMMIT",
+  "last_commit": $J_COMMIT,
   "tasks_pending": $PENDING,
   "tasks_done": $DONE_COUNT,
   "lessons_count": $LESSONS,
-  "session_id": "${CLAUDE_SESSION_ID:-unknown}"
+  "session_id": $J_SID
 }
 EOF
   echo "[SESSION-STATE] saved: $SNAPSHOT"

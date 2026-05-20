@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# mythos-sc — Self-Consistency state machine.
+#
+# Implements the N-sample majority-vote procedure from Wang et al., Google 2022
+# (arXiv:2203.11171, ICLR 2023). Sample diverse reasoning paths, extract each
+# final answer, return the majority vote. +17.9% GSM8K, +11% SVAMP, +12.2% AQuA.
+#
+# Topology:
+#   sc-<task>-meta       — tier C — {question, n, created_ts}
+#   sc-<task>-trace-N    — tier C — one sampled reasoning trace + extracted final answer
+#   sc-<task>-vote       — tier C|D — vote outcome: {winner, vote_count, total, agreement_pct, ties}
+#
+# Subcommands:
+#   init    <task-id> <question>          # record question, n=0
+#   record  <task-id> <trace-file|-> <final-answer>
+#                                         # append one trace, increment n
+#   vote    <task-id>                     # aggregate, majority-vote, record outcome
+#   status  <task-id>                     # N traces, unique answers, vote called?
+#   show    <task-id>                     # render all artifacts
+#
+# Self-Consistency is appropriate ONLY when the final answer is discrete and
+# extractable (number, yes/no, multiple choice, short phrase). For open-ended
+# outputs (code, prose), use CoVe (bin/mythos-cove) instead.
+#
+# This CLI is a STATE MACHINE. The caller (Mythos main) is responsible for
+# sampling the N traces with temperature > 0 (typically via fleet workers or
+# repeated invocations) and extracting the final answer from each.
+#
+# Storage: delegates to bin/mythos-blackboard. One SC run = (N + 2) topics.
+set -uo pipefail
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+. "$PROJECT_DIR/hooks/_lib.sh"
+BB="$PROJECT_DIR/bin/mythos-blackboard"
+
+usage() { sed -n '2,29p' "$0" >&2; exit 64; }
+print_help() { sed -n '2,29p' "$0"; }
+
+validate_task() {
+  local t="$1"
+  case "$t" in
+    ""|*[!A-Za-z0-9._-]*) echo "❌ invalid task-id: $t" >&2; exit 64 ;;
+  esac
+  # Reserve 12 chars for "sc--trace-99" — longest suffix.
+  if [ "${#t}" -gt 52 ]; then
+    echo "❌ task-id > 52 chars (blackboard topic cap)" >&2; exit 64
+  fi
+}
+
+read_payload() {
+  local src="$1"
+  if [ "$src" = "-" ]; then
+    cat
+  else
+    [ ! -f "$src" ] && { echo "❌ no such file: $src" >&2; exit 1; }
+    cat "$src"
+  fi
+}
+
+next_trace_index() {
+  local task="$1"
+  # Count existing trace topics under .claude/state/blackboard/sc-<task>-trace-*.jsonl
+  local bb_dir="$PROJECT_DIR/.claude/state/blackboard"
+  local count
+  count=$(ls "$bb_dir"/sc-"$task"-trace-*.jsonl 2>/dev/null | wc -l | tr -d ' ')
+  echo "$((count + 1))"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  init)
+    task="${1:-}"; q="${2:-}"
+    [ -z "$task" ] || [ -z "$q" ] && usage
+    validate_task "$task"
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    if command -v jq >/dev/null 2>&1; then
+      payload=$(jq -nc --arg q "$q" --arg ts "$ts" '{question: $q, n: 0, created_ts: $ts}')
+    else
+      esc_q=$(printf '%s' "$q" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      payload="{\"question\":\"$esc_q\",\"n\":0,\"created_ts\":\"$ts\"}"
+    fi
+    printf '%s' "$payload" | "$BB" write "sc-$task-meta" - --tier=C
+    printf '✓ sc-%s-meta initialized\n' "$task"
+    ;;
+
+  record)
+    task="${1:-}"; src="${2:-}"; ans="${3:-}"
+    [ -z "$task" ] || [ -z "$src" ] || [ -z "$ans" ] && usage
+    validate_task "$task"
+    if ! "$BB" read "sc-$task-meta" >/dev/null 2>&1; then
+      echo "❌ no meta for $task — call 'init' first" >&2; exit 65
+    fi
+    if ! mythos_lock_acquire "sc-$task" 5000; then
+      echo "❌ could not acquire lock for sc-$task (busy)" >&2; exit 75
+    fi
+    trap "mythos_lock_release \"sc-$task\"" EXIT
+    idx=$(next_trace_index "$task")
+    raw="$(read_payload "$src")"
+    if command -v jq >/dev/null 2>&1; then
+      payload=$(jq -nc --arg t "$raw" --arg a "$ans" --argjson i "$idx" \
+        '{trace: $t, answer: $a, idx: $i}')
+    else
+      esc_t=$(printf '%s' "$raw" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')
+      esc_a=$(printf '%s' "$ans" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      payload="{\"trace\":\"$esc_t\",\"answer\":\"$esc_a\",\"idx\":$idx}"
+    fi
+    printf '%s' "$payload" | "$BB" write "sc-$task-trace-$idx" - --tier=C
+    mythos_lock_release "sc-$task"
+    trap - EXIT
+    printf '✓ sc-%s-trace-%d recorded (answer=%s)\n' "$task" "$idx" "$ans"
+    ;;
+
+  vote)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    if ! mythos_lock_acquire "sc-$task" 5000; then
+      echo "❌ could not acquire lock for sc-$task (busy)" >&2; exit 75
+    fi
+    trap "mythos_lock_release \"sc-$task\"" EXIT
+    bb_dir="$PROJECT_DIR/.claude/state/blackboard"
+    files=$(ls "$bb_dir"/sc-"$task"-trace-*.jsonl 2>/dev/null || true)
+    if [ -z "$files" ]; then
+      mythos_lock_release "sc-$task"; trap - EXIT
+      echo "❌ no traces recorded for $task" >&2; exit 65
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+      mythos_lock_release "sc-$task"; trap - EXIT
+      echo "❌ jq required for vote aggregation" >&2; exit 3
+    fi
+    # Collect last-line (latest) answer from each trace file.
+    answers=()
+    while IFS= read -r f; do
+      last=$(tail -n 1 "$f")
+      a=$(printf '%s' "$last" | jq -r '.payload.answer // empty')
+      [ -n "$a" ] && answers+=("$a")
+    done <<< "$files"
+    total="${#answers[@]}"
+    if [ "$total" -eq 0 ]; then
+      mythos_lock_release "sc-$task"; trap - EXIT
+      echo "❌ no extractable answers" >&2; exit 65
+    fi
+    # Count unique answers
+    counts=$(printf '%s\n' "${answers[@]}" | sort | uniq -c | sort -rn)
+    winner=$(printf '%s\n' "$counts" | head -1 | awk '{$1=""; sub(/^ +/,""); print}')
+    winner_count=$(printf '%s\n' "$counts" | head -1 | awk '{print $1}')
+    agreement=$(awk -v w="$winner_count" -v t="$total" 'BEGIN{printf "%.0f", (w*100)/t}')
+    # Collect ties (within 1 vote of winner)
+    ties=$(printf '%s\n' "$counts" | awk -v w="$winner_count" '$1 >= (w-1) {$1=""; sub(/^ +/,""); print}' | head -10)
+    tier="C"
+    [ "$agreement" -ge 67 ] && tier="D"
+    if [ "$agreement" -lt 50 ]; then tier="C"; fi
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    ties_json=$(printf '%s\n' "$ties" | grep -v '^$' | jq -R . | jq -s .)
+    payload=$(jq -nc --arg w "$winner" --argjson wc "$winner_count" --argjson t "$total" \
+                     --argjson ag "$agreement" --arg tier "$tier" --arg ts "$ts" \
+                     --argjson ties "$ties_json" \
+      '{winner: $w, vote_count: $wc, total: $t, agreement_pct: $ag, tier: $tier, ts: $ts, ties: $ties}')
+    printf '%s' "$payload" | "$BB" write "sc-$task-vote" - --tier="$tier" >/dev/null
+    mythos_lock_release "sc-$task"
+    trap - EXIT
+    printf '%s\n' "$payload" | jq .
+    ;;
+
+  status)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    bb_dir="$PROJECT_DIR/.claude/state/blackboard"
+    n=$(ls "$bb_dir"/sc-"$task"-trace-*.jsonl 2>/dev/null | wc -l | tr -d ' ')
+    has_meta=$("$BB" read "sc-$task-meta" >/dev/null 2>&1 && echo yes || echo no)
+    has_vote=$("$BB" read "sc-$task-vote" >/dev/null 2>&1 && echo yes || echo no)
+    printf '── SC status for %s ──\n' "$task"
+    printf '  meta:      %s\n' "$has_meta"
+    printf '  traces:    %d\n' "$n"
+    printf '  vote:      %s\n' "$has_vote"
+    if [ "$n" -gt 0 ] && command -v jq >/dev/null 2>&1; then
+      printf '  answers:\n'
+      for f in "$bb_dir"/sc-"$task"-trace-*.jsonl; do
+        tail -n 1 "$f" | jq -r '.payload.answer // empty' 2>/dev/null
+      done | sort | uniq -c | sort -rn | awk '{printf "    %-30s %s\n", $2, $1}'
+    fi
+    ;;
+
+  show)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    printf '── sc-%s-meta ──\n' "$task"
+    "$BB" read "sc-$task-meta" 2>/dev/null || echo "(no entry)"
+    bb_dir="$PROJECT_DIR/.claude/state/blackboard"
+    for f in "$bb_dir"/sc-"$task"-trace-*.jsonl; do
+      [ -f "$f" ] || continue
+      base=$(basename "$f" .jsonl)
+      printf '── %s ──\n' "$base"
+      tail -n 1 "$f"
+    done
+    printf '── sc-%s-vote ──\n' "$task"
+    "$BB" read "sc-$task-vote" 2>/dev/null || echo "(no entry — call 'vote')"
+    ;;
+
+  ""|-h|--help|help) print_help ;;
+  *) echo "❌ unknown subcommand: $cmd" >&2; usage ;;
+esac

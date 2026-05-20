@@ -56,3 +56,15 @@
 **Mistake:** `cmd_list` in `bin/mythos-fleet` failed on empty state with "files: unbound variable" when iterating `"${files[@]}"` after a `shopt -s nullglob` glob that matched nothing.
 **Root cause:** macOS default bash 3.2 + `set -euo pipefail` treats expansion of an empty array via `"${arr[@]}"` as referencing an unset variable in some contexts (this is one of the historical quirks fixed in bash 4.4+).
 **Rule:** When iterating a possibly-empty glob array under `set -u`, always guard: `[ ${#files[@]} -eq 0 ] && return 0` (or equivalent) BEFORE the `for` loop. Same pattern needed for `${arr[@]:1}`, `${arr[0]}` etc. on empty arrays. Lesson generalizes: any associative or indexed array expansion that might be empty needs a length-check guard on bash 3.2.
+
+### 2026-05-20 — stdout discipline for composable CLIs
+
+**Rule:** in any Mythos CLI whose output is intended to be piped into a parser (`jq`, `python3 -c`, etc.), every byte on stdout must be intentional machine-readable output. Human-friendly confirmation messages go to stderr.
+
+**Why:** caught in v6.0 self-test integration. `bin/mythos-sc vote` initially forwarded `mythos-blackboard write`'s "✓ wrote ..." line on stdout, which broke `vote | jq -e '...'` in the test suite (jq parse error on the leading "✓"). The fix was to redirect the blackboard write to /dev/null inside the `vote` subcommand and only emit the final JSON via `jq .`.
+
+**How to apply:**
+- Query/aggregate verbs (`vote`, `status --json`, `get`, `read`): stdout = machine output only.
+- Mutation verbs (`write`, `record`, `init`): stdout = human "✓" message acceptable; if composed with another CLI, suppress via `>/dev/null` at the call site.
+- Errors and warnings: always stderr.
+- Help/usage when invoked explicitly (`help`/`-h`/`--help`): stdout (so tests can `cmd help | grep`); usage from an unknown-subcommand error path: stderr.

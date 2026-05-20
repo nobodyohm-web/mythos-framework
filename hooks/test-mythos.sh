@@ -742,6 +742,120 @@ check ".claude/state/fleet/ exists"                              $?
 "$P/bin/mythos-fleet" help 2>/dev/null | grep -qi 'never auto-merges'
 check "mythos-fleet help mentions never auto-merges"             $?
 
+# ─── 7g. v6.0 — Reasoning Primitives (mythos-cove, mythos-sc) ─────────────────
+section "Reasoning Primitives (v6.0)"
+
+# 7g.1 binaries exist + are executable
+[ -x "$P/bin/mythos-cove" ]; check "+x:    bin/mythos-cove"            $?
+[ -x "$P/bin/mythos-sc" ];   check "+x:    bin/mythos-sc"              $?
+
+# 7g.2 help strings mention the key safety/protocol terms
+"$P/bin/mythos-cove" help 2>/dev/null | grep -qi 'fresh context'
+check "mythos-cove help mentions fresh context"                   $?
+"$P/bin/mythos-cove" help 2>/dev/null | grep -qi 'draft\|plan\|answer\|revise'
+check "mythos-cove help lists the 4 stages"                       $?
+"$P/bin/mythos-sc" help 2>/dev/null | grep -qi 'majority'
+check "mythos-sc help mentions majority vote"                     $?
+"$P/bin/mythos-sc" help 2>/dev/null | grep -qi 'discrete'
+check "mythos-sc help warns about discrete-answer requirement"    $?
+
+# 7g.3 cove lifecycle: draft → plan → answer → revise → status shows all 4 ✓
+for stage in draft questions answers revised; do
+  "$P/bin/mythos-blackboard" clear "cove-_smoke_cove-$stage" >/dev/null 2>&1 || true
+done
+echo "draft text" | "$P/bin/mythos-cove" draft _smoke_cove - >/dev/null
+echo "q1? q2?" | "$P/bin/mythos-cove" plan _smoke_cove - >/dev/null
+echo "a1. a2." | "$P/bin/mythos-cove" answer _smoke_cove - >/dev/null
+echo "verified text" | "$P/bin/mythos-cove" revise _smoke_cove - >/dev/null
+status=$("$P/bin/mythos-cove" status _smoke_cove 2>&1)
+echo "$status" | grep -q "draft.*✓" && \
+  echo "$status" | grep -q "questions.*✓" && \
+  echo "$status" | grep -q "answers.*✓" && \
+  echo "$status" | grep -q "revised.*✓"
+check "cove records all 4 stages and status shows ✓ for each" $?
+
+# 7g.4 tier discipline: draft=C, questions=C, answers=D, revised=D
+"$P/bin/mythos-blackboard" read cove-_smoke_cove-draft 2>/dev/null \
+  | python3 -c "import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get('tier')=='C' else 1)"
+check "cove-draft has tier=C"                                    $?
+"$P/bin/mythos-blackboard" read cove-_smoke_cove-answers 2>/dev/null \
+  | python3 -c "import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get('tier')=='D' else 1)"
+check "cove-answers has tier=D"                                  $?
+"$P/bin/mythos-blackboard" read cove-_smoke_cove-revised 2>/dev/null \
+  | python3 -c "import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get('tier')=='D' else 1)"
+check "cove-revised has tier=D"                                  $?
+
+# 7g.5 order enforcement: plan without draft fails
+"$P/bin/mythos-blackboard" clear cove-_smoke_order-draft >/dev/null 2>&1 || true
+echo "qs" | "$P/bin/mythos-cove" plan _smoke_order - >/dev/null 2>&1
+[ $? -eq 65 ]
+check "cove plan without draft → exit 65"                        $?
+
+# Cleanup cove smoke
+for stage in draft questions answers revised; do
+  "$P/bin/mythos-blackboard" clear "cove-_smoke_cove-$stage" >/dev/null 2>&1 || true
+done
+
+# 7g.6 sc lifecycle: init → record × 4 → vote with 3-1 split returns winner + agreement=75
+"$P/bin/mythos-blackboard" clear sc-_smoke_sc-meta >/dev/null 2>&1 || true
+for f in "$P"/.claude/state/blackboard/sc-_smoke_sc-trace-*.jsonl; do rm -f "$f"; done
+"$P/bin/mythos-blackboard" clear sc-_smoke_sc-vote >/dev/null 2>&1 || true
+"$P/bin/mythos-sc" init _smoke_sc "Q?" >/dev/null
+echo "t1" | "$P/bin/mythos-sc" record _smoke_sc - "A" >/dev/null
+echo "t2" | "$P/bin/mythos-sc" record _smoke_sc - "A" >/dev/null
+echo "t3" | "$P/bin/mythos-sc" record _smoke_sc - "A" >/dev/null
+echo "t4" | "$P/bin/mythos-sc" record _smoke_sc - "B" >/dev/null
+"$P/bin/mythos-sc" vote _smoke_sc 2>/dev/null \
+  | jq -e '.winner=="A" and .vote_count==3 and .total==4 and .agreement_pct==75 and .tier=="D"' >/dev/null
+check "sc 3-1 vote: winner=A, agreement=75%, tier=D"             $?
+
+# 7g.7 record without init fails
+"$P/bin/mythos-blackboard" clear sc-_smoke_noinit-meta >/dev/null 2>&1 || true
+echo "t" | "$P/bin/mythos-sc" record _smoke_noinit - "A" >/dev/null 2>&1
+[ $? -eq 65 ]
+check "sc record without init → exit 65"                         $?
+
+# 7g.8 sc 2-2 tie: tier C, ties has both
+"$P/bin/mythos-blackboard" clear sc-_smoke_tie-meta >/dev/null 2>&1 || true
+for f in "$P"/.claude/state/blackboard/sc-_smoke_tie-trace-*.jsonl; do rm -f "$f"; done
+"$P/bin/mythos-blackboard" clear sc-_smoke_tie-vote >/dev/null 2>&1 || true
+"$P/bin/mythos-sc" init _smoke_tie "Y/N?" >/dev/null
+echo "t" | "$P/bin/mythos-sc" record _smoke_tie - "Y" >/dev/null
+echo "t" | "$P/bin/mythos-sc" record _smoke_tie - "Y" >/dev/null
+echo "t" | "$P/bin/mythos-sc" record _smoke_tie - "N" >/dev/null
+echo "t" | "$P/bin/mythos-sc" record _smoke_tie - "N" >/dev/null
+"$P/bin/mythos-sc" vote _smoke_tie 2>/dev/null \
+  | jq -e '.tier=="C" and (.ties|length)==2' >/dev/null
+check "sc 2-2 tie: tier=C, ties length=2"                        $?
+
+# Cleanup sc smoke
+for prefix in _smoke_sc _smoke_tie _smoke_noinit; do
+  "$P/bin/mythos-blackboard" clear "sc-$prefix-meta" >/dev/null 2>&1 || true
+  "$P/bin/mythos-blackboard" clear "sc-$prefix-vote" >/dev/null 2>&1 || true
+  for f in "$P"/.claude/state/blackboard/sc-$prefix-trace-*.jsonl; do rm -f "$f"; done
+done
+
+# 7g.9 task-id validation (chars + length)
+"$P/bin/mythos-cove" draft "bad name" /dev/null >/dev/null 2>&1
+[ $? -eq 64 ]; check "cove rejects task-id with space"           $?
+LONG=$(python3 -c "print('a'*60)")
+"$P/bin/mythos-cove" draft "$LONG" /dev/null >/dev/null 2>&1
+[ $? -eq 64 ]; check "cove rejects task-id > 49 chars"           $?
+
+# 7g.10 skills, slash commands, registry
+[ -f "$P/skills/chain-of-verification.md" ]; check "skills/chain-of-verification.md exists" $?
+[ -f "$P/skills/self-consistency.md" ];       check "skills/self-consistency.md exists"      $?
+[ -f "$P/.claude/commands/cove.md" ];         check ".claude/commands/cove.md exists"        $?
+[ -f "$P/.claude/commands/sc.md" ];           check ".claude/commands/sc.md exists"          $?
+"$P/bin/mythos-skill" info chain-of-verification 2>/dev/null | grep -q '"id": "chain-of-verification"'
+check "registry contains chain-of-verification"                  $?
+"$P/bin/mythos-skill" info self-consistency 2>/dev/null | grep -q '"id": "self-consistency"'
+check "registry contains self-consistency"                       $?
+
+# 7g.11 spec exists
+[ -f "$P/specs/007-reasoning-monster/spec.md" ]
+check "specs/007-reasoning-monster/spec.md exists"               $?
+
 # ─── 8. Summary ───────────────────────────────────────────────────────────────
 TOTAL=$((PASS+FAIL))
 printf '\n──────────────────────────────────────\n'
