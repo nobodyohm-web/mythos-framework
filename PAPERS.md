@@ -17,6 +17,26 @@ Every reasoning primitive in Mythos cites a paper. This document is the load-bea
 - **Reported gain:** +17.9% on GSM8K, +11.0% on SVAMP, +12.2% on AQuA in the original paper.
 - **Why it works:** majority vote across diverse sampling paths filters out single-path errors.
 
+### Reflexion (verbal reinforcement learning)
+- **Paper:** Shinn, Cassano, Berman, Gopinath, Narasimhan, Yao. *"Reflexion: Language Agents with Verbal Reinforcement Learning"*, arXiv:2303.11366 (2023). NeurIPS 2023.
+- **Mythos implementation:** `bin/mythos-reflexion` + `skills/reflexion.md` + `/reflexion`.
+- **State machine:** `record (per failure) → recall (next attempt) → list → clear`.
+- **Reported gain:** +22% HumanEval pass@1 vs ReAct baseline (paper Table 2), gains also on AlfWorld + HotpotQA.
+- **Why it works:** the model reads its OWN prior failure analysis at the start of attempt N+1. Pure prompting, no weight updates. Fills the cross-attempt gap CoVe (within-attempt) and SC (parallel-sample) leave open.
+
+### Self-Refine (iterative critique-revise)
+- **Paper:** Madaan et al., *"Self-Refine: Iterative Refinement with Self-Feedback"*, arXiv:2303.17651 (2023). NeurIPS 2023.
+- **Mythos implementation:** `bin/mythos-cove revise --iterations N` (integrated as a CoVe flag, not a separate CLI — researcher consensus: Self-Refine is structurally CoVe with repetition).
+- **Convergence detection:** consecutive revisions identical → stop without writing. Max iterations capped to prevent unbounded loops.
+- **Reported gain:** ~20% absolute improvement across 7 tasks (NeurIPS 2023, Table 2).
+
+### Adaptive Best-of-N (compute-optimal test-time scaling)
+- **Paper:** Snell, Lee, Xu, Kumar, *"Scaling LLM Test-Time Compute Optimally Can Be More Effective than Scaling Model Parameters"*, arXiv:2408.03314 (Aug 2024).
+- **Mythos implementation:** `bin/mythos-bestofn` + `skills/best-of-n.md` + `/bestofn`.
+- **State machine:** `init (--difficulty) → record (candidate + score) → choose (highest, with margin → tier)`.
+- **Reported gain:** ~4× efficiency vs naive uniform-N Best-of-N at matched FLOPs. PaLM 2-S with adaptive TTC beats PaLM 2-L (14× larger) on MATH.
+- **Why it works:** difficulty classification (zero-shot, 1-5) routes compute where it pays off. Difficulty→N: 1→1, 2→2, 3→4, 4→8, 5→16.
+
 ### Generator-Verifier-Updater (GVU)
 - **Paper:** Chojecki, *"Variance Inequality for Generator-Verifier-Updater"*, arXiv:2512.02731 (2025).
 - **Mythos implementation:** `bin/mythos-gvu` + `skills/gvu.md`.

@@ -8,7 +8,8 @@ The single source of truth for whether the framework is working.
 
 | Version | Checks | Pass | Date |
 |---------|--------|------|------|
-| 6.0.0 | 274 | **274 (100%)** | 2026-05-21 |
+| 6.1.0 | 309 | **309 (100%)** | 2026-05-21 |
+| 6.0.0 | 274 | 274 (100%) | 2026-05-21 |
 | 5.5.0 | 251 | 251 (100%) | 2026-05-20 |
 | 5.4.0 | 234 | 234 (100%) | 2026-05-20 |
 | 5.2.0 | 218 | 218 (100%) | 2026-05-18 |
@@ -16,10 +17,10 @@ The single source of truth for whether the framework is working.
 **Reproduce:**
 ```bash
 bash hooks/test-mythos.sh
-# → ✓ ALL CLEAR — 274/274 checks passed
+# → ✓ ALL CLEAR — 309/309 checks passed
 ```
 
-Tests cover: file layout, hook wiring, JSON validity, frontmatter on every agent, guard behavior under crafted inputs, marketplace CLIs, registry shape, dry-run install safety, token-optim CLIs, the subagent model policy (8 on Opus, 1 on Sonnet), the fleet safety contract (help text, dispatch error paths, exit codes, env isolation, state-dir lifecycle), CoVe state machine, and Self-Consistency vote logic.
+Tests cover: file layout, hook wiring, JSON validity, frontmatter on every agent, guard behavior under crafted inputs, marketplace CLIs, registry shape, dry-run install safety, token-optim CLIs, the subagent model policy (8 on Opus, 1 on Sonnet), the fleet safety contract (help text, dispatch error paths, exit codes, env isolation, state-dir lifecycle), CoVe state machine + iterations + convergence, Self-Consistency vote logic, Reflexion record/recall/tier discipline, Best-of-N init/record/choose/margin→tier, and `_lib.sh` env-var helpers.
 
 ## Defensive hook behavior
 

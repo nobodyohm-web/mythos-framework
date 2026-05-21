@@ -2,6 +2,26 @@
 
 All notable changes to Mythos are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/).
 
+## [6.1.0] — 2026-05-21 — Reasoning Revolution
+
+### Added
+- **Reflexion** — `bin/mythos-reflexion` + `skills/reflexion.md` + `/reflexion`. Cross-attempt episodic memory loop. After a failed attempt, write a verbal reflection; future attempts recall it and prepend to prompt. Implements Shinn et al. NeurIPS 2023 (arXiv:2303.11366). +22% HumanEval pass@1 reported in paper.
+- **Adaptive Best-of-N** — `bin/mythos-bestofn` + `skills/best-of-n.md` + `/bestofn`. Compute-optimal routing: classify difficulty (1-5), sample N candidates accordingly, score with a verifier, pick highest. Implements Snell et al. 2024 (arXiv:2408.03314). 4× efficiency vs naive Best-of-N.
+- **Self-Refine via `--iterations N` on `mythos-cove revise`** — Iterative critique-revise loop with convergence detection (stops when consecutive revisions are identical). Implements Madaan et al. NeurIPS 2023 (arXiv:2303.17651). Backward-compatible: no flag → single-shot behavior unchanged.
+- **Env-var helpers in `hooks/_lib.sh`** — `mythos_session_id` and `mythos_effort` read `$CLAUDE_CODE_SESSION_ID` / `$CLAUDE_EFFORT` exposed by Claude Code 2.x. Safe defaults: empty / "default" if unset.
+- **CLAUDE.md**: new section "Claude Code 2.x platform primitives" referencing `/goal`, `/ultrareview`, `/effort xhigh`. Marked `[C]` — composable, not reimplemented.
+
+### Stats
+- 309/309 self-tests pass (35 new for v6.1).
+- 3 new arXiv-cited primitives, 2 new CLIs, 1 modified CLI, 2 new skills, 2 new slash commands.
+
+### Out of scope (explicit, with reasons)
+- MCTS upgrade to `mythos-tot` — researcher recommended spike-first; deferred to v6.2.
+- Process Reward Models (PRM, arXiv:2305.20050) — requires training pipeline; zero-shot version under-performs by ~15pp per the literature.
+- Multi-Agent Debate (arXiv:2305.14325) — gain over existing SC is not quantified in available sources; L effort; revisit if a Mythos use case shows correlated SC failures.
+- Claude Code plugin manifest packaging — L effort, defer.
+- New Claude Code hook types (mcp_tool / http / args:[] exec / continueOnBlock / terminalSequence) — unverified by direct check; defer until independently confirmed.
+
 ## [6.0.0] — 2026-05-21 — Reasoning Monster
 
 ### Added

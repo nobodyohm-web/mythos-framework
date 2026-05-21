@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# mythos-reflexion — Reflexion episodic memory CLI.
+#
+# Implements the verbal-RL memory loop from Shinn et al., NeurIPS 2023
+# (arXiv:2303.11366). After a failed attempt, the caller writes a
+# verbal reflection (root cause + what to try next) to disk. Future
+# attempts at the same task recall those reflections and prepend them
+# to the prompt — no weight updates, pure prompting. +22% HumanEval pass@1.
+#
+# Storage: .claude/memory/reflexion/<task>.jsonl
+# Line shape: {"ts":"...","attempt":N,"outcome":"success|failure|partial",
+#              "reflection":"...","tier":"D|C"}
+#
+# Subcommands:
+#   record  <task-id> <attempt> <outcome> <file|->
+#                                         # append a reflection
+#   recall  <task-id> [--last N]          # print last N as markdown (default 3)
+#   list                                  # all tasks with reflection counts
+#   clear   <task-id>                     # wipe one task's history (testing only)
+#
+# This is a STATE MACHINE; the caller (Mythos main, or a /reflexion call)
+# is responsible for *generating* the reflection text. The CLI only stores
+# and recalls. Communicate-through-files (Anthropic Principle #3).
+set -uo pipefail
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+. "$PROJECT_DIR/hooks/_lib.sh"
+REF_DIR="$PROJECT_DIR/.claude/memory/reflexion"
+mkdir -p "$REF_DIR"
+
+usage() { sed -n '2,25p' "$0" >&2; exit 64; }
+print_help() { sed -n '2,25p' "$0"; }
+
+validate_task() {
+  local t="$1"
+  case "$t" in
+    ""|*[!A-Za-z0-9._-]*) echo "❌ invalid task-id (chars): $t" >&2; exit 64 ;;
+  esac
+  if [ "${#t}" -gt 64 ]; then
+    echo "❌ task-id > 64 chars" >&2; exit 64
+  fi
+}
+
+validate_outcome() {
+  case "$1" in
+    success|failure|partial) return 0 ;;
+    *) echo "❌ outcome must be one of: success, failure, partial" >&2; exit 64 ;;
+  esac
+}
+
+validate_int() {
+  case "$1" in
+    ''|*[!0-9]*) echo "❌ $2 must be a positive integer (got: $1)" >&2; exit 64 ;;
+  esac
+  [ "$1" -lt 1 ] 2>/dev/null && { echo "❌ $2 must be >= 1" >&2; exit 64; }
+}
+
+read_payload() {
+  local src="$1"
+  if [ "$src" = "-" ]; then
+    cat
+  else
+    [ ! -f "$src" ] && { echo "❌ no such file: $src" >&2; exit 1; }
+    cat "$src"
+  fi
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  record)
+    task="${1:-}"; attempt="${2:-}"; outcome="${3:-}"; src="${4:-}"
+    { [ -z "$task" ] || [ -z "$attempt" ] || [ -z "$outcome" ] || [ -z "$src" ]; } && usage
+    validate_task "$task"
+    validate_outcome "$outcome"
+    validate_int "$attempt" "attempt"
+
+    reflection="$(read_payload "$src")"
+    [ -z "$reflection" ] && { echo "❌ reflection is empty" >&2; exit 64; }
+
+    file="$REF_DIR/$task.jsonl"
+    if ! mythos_lock_acquire "reflexion-$task" 5000; then
+      echo "❌ could not acquire lock for reflexion-$task (busy)" >&2; exit 75
+    fi
+    trap "mythos_lock_release \"reflexion-$task\"" EXIT
+
+    tier="D"
+    [ "$outcome" = "partial" ] && tier="C"
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if command -v jq >/dev/null 2>&1; then
+      jq -nc --arg ts "$ts" --argjson a "$attempt" --arg o "$outcome" \
+             --arg r "$reflection" --arg t "$tier" \
+        '{ts:$ts,attempt:$a,outcome:$o,reflection:$r,tier:$t}' >> "$file"
+    else
+      esc=$(printf '%s' "$reflection" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')
+      printf '{"ts":"%s","attempt":%d,"outcome":"%s","reflection":"%s","tier":"%s"}\n' \
+        "$ts" "$attempt" "$outcome" "$esc" "$tier" >> "$file"
+    fi
+
+    mythos_lock_release "reflexion-$task"
+    trap - EXIT
+    printf '✓ reflexion-%s attempt=%d outcome=%s tier=%s (%d bytes)\n' \
+      "$task" "$attempt" "$outcome" "$tier" "${#reflection}"
+    ;;
+
+  recall)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    shift || true
+    n=3
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --last=*) n="${1#--last=}" ;;
+        --last)   shift; n="${1:-3}" ;;
+        *)        echo "❌ unknown flag: $1" >&2; exit 64 ;;
+      esac
+      shift || true
+    done
+    validate_int "$n" "--last"
+
+    file="$REF_DIR/$task.jsonl"
+    if [ ! -f "$file" ]; then
+      printf '(no reflections for %s)\n' "$task" >&2
+      exit 0
+    fi
+    if command -v jq >/dev/null 2>&1; then
+      printf '## Reflexion recall — %s (last %d)\n\n' "$task" "$n"
+      tail -n "$n" "$file" | jq -r '
+        "- **Attempt \(.attempt)** [\(.outcome), tier=\(.tier), \(.ts)]\n  \(.reflection | gsub("\n";"\n  "))"
+      '
+    else
+      tail -n "$n" "$file"
+    fi
+    ;;
+
+  list)
+    have_any=0
+    for f in "$REF_DIR"/*.jsonl; do
+      [ -f "$f" ] || continue
+      have_any=1
+      break
+    done
+    if [ "$have_any" -eq 0 ]; then
+      echo "(no tasks have reflections)"
+      exit 0
+    fi
+    printf '── Reflexion tasks ──\n'
+    for f in "$REF_DIR"/*.jsonl; do
+      [ -f "$f" ] || continue
+      task=$(basename "$f" .jsonl)
+      n=$(wc -l < "$f" | tr -d ' ')
+      printf '  %-30s %d reflections\n' "$task" "$n"
+    done
+    ;;
+
+  clear)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    file="$REF_DIR/$task.jsonl"
+    if [ -f "$file" ]; then
+      rm -f "$file"
+      printf '✓ cleared reflexion-%s\n' "$task"
+    else
+      printf '(no reflections for %s)\n' "$task"
+    fi
+    ;;
+
+  ""|-h|--help|help) print_help ;;
+  *) echo "❌ unknown subcommand: $cmd" >&2; usage ;;
+esac

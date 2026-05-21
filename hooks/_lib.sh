@@ -99,6 +99,19 @@ mythos_emit_hook_output() {
   fi
 }
 
+# Claude Code 2.1.x exposes session-level metadata via env vars in
+# subprocesses. These helpers read them safely (empty if unset, so hooks
+# that source _lib.sh in older Claude Code versions still work).
+# Verified: UserPromptSubmit hook is firing in this codebase, confirming
+# we are on a version with the env-var contract. Use [C] tier if you log
+# these — they are platform-derived, not Mythos-derived.
+mythos_session_id() {
+  printf '%s' "${CLAUDE_CODE_SESSION_ID:-}"
+}
+mythos_effort() {
+  printf '%s' "${CLAUDE_EFFORT:-default}"
+}
+
 # Block a tool with an explanation (PreToolUse). Exit 2 = decline; stderr → user.
 mythos_block() {
   local reason="$*"

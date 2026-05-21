@@ -31,6 +31,16 @@
       "spec": "specs/007-reasoning-monster/spec.md",
       "branch": "master",
       "completed_at": "2026-05-20"
+    },
+    {
+      "id": "009",
+      "slug": "revolution",
+      "title": "Reasoning Revolution — Reflexion + Adaptive Best-of-N + Self-Refine (v6.1)",
+      "status": "implemented",
+      "confidence": 92,
+      "spec": "specs/009-revolution/spec.md",
+      "branch": "master",
+      "completed_at": "2026-05-21"
     }
   ]
 }

@@ -57,6 +57,19 @@
 **Root cause:** macOS default bash 3.2 + `set -euo pipefail` treats expansion of an empty array via `"${arr[@]}"` as referencing an unset variable in some contexts (this is one of the historical quirks fixed in bash 4.4+).
 **Rule:** When iterating a possibly-empty glob array under `set -u`, always guard: `[ ${#files[@]} -eq 0 ] && return 0` (or equivalent) BEFORE the `for` loop. Same pattern needed for `${arr[@]:1}`, `${arr[0]}` etc. on empty arrays. Lesson generalizes: any associative or indexed array expansion that might be empty needs a length-check guard on bash 3.2.
 
+### 2026-05-21 — `exit` inside `$(...)` only exits the subshell
+
+**Rule:** when a function called inside command substitution (`x=$(myfunc ...)`) calls `exit`, that only terminates the **subshell**, not the parent script. The parent continues with an empty `$x` and a misleading exit code (often 0, since pipe-fail doesn't catch this). Always use return codes + explicit caller checks.
+
+**Why:** caught in `bin/mythos-bestofn` during v6.1 self-test. A draft version had `n_from_difficulty` calling `exit 64` on invalid input. Inside the parent's `n=$(n_from_difficulty "$d")`, the subshell exited 64 but the parent kept running with `n=""` and eventually failed with a Python `ValueError: invalid literal for int()`. The user-visible exit code was 0, masking the bug.
+
+**How to apply:**
+- For functions called inside `$()`: use `return N` (non-zero on error) AND echo a value (or nothing) on stdout. The caller MUST check via `if ! x=$(fn); then ...` or `[ -z "$x" ]`.
+- Reserve `exit` for the *top-level script* and direct flow control, never inside helpers that might be called from `$(...)` or pipes.
+- Pattern: `if ! n=$(n_from_difficulty "$d") || [ -z "$n" ]; then echo "❌ ..."; exit 64; fi`
+
+**Generalization:** this also affects functions called inside `while read` loops, backticks, and pipelines — the body runs in a subshell. The rule covers all such cases.
+
 ### 2026-05-20 — stdout discipline for composable CLIs
 
 **Rule:** in any Mythos CLI whose output is intended to be piped into a parser (`jq`, `python3 -c`, etc.), every byte on stdout must be intentional machine-readable output. Human-friendly confirmation messages go to stderr.

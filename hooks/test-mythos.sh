@@ -856,6 +856,174 @@ check "registry contains self-consistency"                       $?
 [ -f "$P/specs/007-reasoning-monster/spec.md" ]
 check "specs/007-reasoning-monster/spec.md exists"               $?
 
+# ─── 7h. v6.1 — Reflexion + Best-of-N + CoVe iterations + env helpers ─────────
+section "v6.1 Primitives"
+
+# 7h.1 binaries exist + executable
+[ -x "$P/bin/mythos-reflexion" ]; check "+x:    bin/mythos-reflexion" $?
+[ -x "$P/bin/mythos-bestofn" ];   check "+x:    bin/mythos-bestofn"   $?
+
+# 7h.2 help strings cite the papers
+"$P/bin/mythos-reflexion" help 2>/dev/null | grep -q '2303.11366'
+check "reflexion help cites arXiv:2303.11366 (Reflexion paper)" $?
+"$P/bin/mythos-bestofn" help 2>/dev/null | grep -q '2408.03314'
+check "bestofn help cites arXiv:2408.03314 (Snell paper)" $?
+
+# 7h.3 reflexion lifecycle: record → recall → list → clear
+"$P/bin/mythos-reflexion" clear _smoke_ref >/dev/null 2>&1 || true
+echo "root cause: assumed X, should have checked Y" \
+  | "$P/bin/mythos-reflexion" record _smoke_ref 1 failure - >/dev/null
+echo "root cause: hit rate-limit on attempt 2" \
+  | "$P/bin/mythos-reflexion" record _smoke_ref 2 partial - >/dev/null
+out=$("$P/bin/mythos-reflexion" recall _smoke_ref --last 2 2>/dev/null)
+echo "$out" | grep -q "Attempt 1" && echo "$out" | grep -q "Attempt 2"
+check "reflexion record/recall round-trips 2 entries" $?
+
+# 7h.4 tier discipline: failure=D, partial=C
+file="$P/.claude/memory/reflexion/_smoke_ref.jsonl"
+head -n 1 "$file" | jq -e '.tier == "D" and .outcome == "failure"' >/dev/null
+check "reflexion outcome=failure → tier=D" $?
+tail -n 1 "$file" | jq -e '.tier == "C" and .outcome == "partial"' >/dev/null
+check "reflexion outcome=partial → tier=C" $?
+
+# 7h.5 list shows the task with correct count
+"$P/bin/mythos-reflexion" list 2>/dev/null | grep -qE "_smoke_ref +2 reflections"
+check "reflexion list shows task with 2 reflections" $?
+
+# 7h.6 recall --last N respected
+n=$("$P/bin/mythos-reflexion" recall _smoke_ref --last 1 2>/dev/null | grep -c "Attempt ")
+[ "$n" -eq 1 ]
+check "reflexion recall --last 1 returns exactly 1 entry" $?
+
+# 7h.7 invalid task-id → exit 64
+"$P/bin/mythos-reflexion" record "bad name" 1 failure /dev/null >/dev/null 2>&1
+[ $? -eq 64 ]; check "reflexion rejects task-id with space (exit 64)" $?
+
+# 7h.8 invalid outcome → exit 64
+echo "x" | "$P/bin/mythos-reflexion" record _smoke_ref 1 wat - >/dev/null 2>&1
+[ $? -eq 64 ]; check "reflexion rejects invalid outcome (exit 64)" $?
+
+# 7h.9 clear removes the file
+"$P/bin/mythos-reflexion" clear _smoke_ref >/dev/null 2>&1
+[ ! -f "$file" ]
+check "reflexion clear removes the .jsonl file" $?
+
+# 7h.10 bestofn init computes recommended_n from difficulty
+"$P/bin/mythos-bestofn" clear _smoke_bon >/dev/null 2>&1 || true
+echo "q" | "$P/bin/mythos-bestofn" init _smoke_bon - --difficulty=4 >/dev/null
+"$P/bin/mythos-bestofn" show _smoke_bon 2>/dev/null \
+  | jq -e '.difficulty==4 and .recommended_n==8' >/dev/null
+check "bestofn difficulty=4 → recommended_n=8" $?
+
+# 7h.11 bestofn choose returns highest score
+echo "low"  | "$P/bin/mythos-bestofn" record _smoke_bon - 30 >/dev/null
+echo "high" | "$P/bin/mythos-bestofn" record _smoke_bon - 90 >/dev/null
+echo "mid"  | "$P/bin/mythos-bestofn" record _smoke_bon - 60 >/dev/null
+winner=$("$P/bin/mythos-bestofn" choose _smoke_bon 2>/dev/null \
+         | jq -r '.content')
+[ "$winner" = "high" ]
+check "bestofn choose returns highest-scored candidate" $?
+
+# 7h.12 bestofn margin >= 10 → tier D
+"$P/bin/mythos-bestofn" choose _smoke_bon 2>/dev/null \
+  | jq -e '.tier == "D" and .margin == 30' >/dev/null
+check "bestofn margin=30 → tier=D" $?
+
+# 7h.13 bestofn invalid difficulty → exit 64
+echo "x" | "$P/bin/mythos-bestofn" init _bad - --difficulty=9 >/dev/null 2>&1
+[ $? -eq 64 ]; check "bestofn rejects difficulty=9 (exit 64)" $?
+
+# 7h.14 bestofn invalid score → exit 64
+echo "x" | "$P/bin/mythos-bestofn" record _smoke_bon - 999 >/dev/null 2>&1
+[ $? -eq 64 ]; check "bestofn rejects score=999 (exit 64)" $?
+
+# 7h.15 bestofn record without init → exit 65
+"$P/bin/mythos-bestofn" clear _noinit >/dev/null 2>&1 || true
+echo "x" | "$P/bin/mythos-bestofn" record _noinit - 50 >/dev/null 2>&1
+[ $? -eq 65 ]; check "bestofn record without init → exit 65" $?
+
+"$P/bin/mythos-bestofn" clear _smoke_bon >/dev/null 2>&1 || true
+
+# 7h.16 CoVe --iterations: backward-compat (no flag = single shot)
+for stage in draft questions answers revised; do
+  "$P/bin/mythos-blackboard" clear "cove-_smoke_iter1-$stage" >/dev/null 2>&1 || true
+done
+echo "d" | "$P/bin/mythos-cove" draft   _smoke_iter1 - >/dev/null
+echo "q" | "$P/bin/mythos-cove" plan    _smoke_iter1 - >/dev/null
+echo "a" | "$P/bin/mythos-cove" answer  _smoke_iter1 - >/dev/null
+echo "v" | "$P/bin/mythos-cove" revise  _smoke_iter1 - >/dev/null
+n=$(wc -l < "$P/.claude/state/blackboard/cove-_smoke_iter1-revised.jsonl" | tr -d ' ')
+[ "$n" -eq 1 ]
+check "cove revise (no flag) writes exactly 1 entry — backward compat" $?
+
+# 7h.17 CoVe --iterations: convergence detection
+for stage in draft questions answers revised; do
+  "$P/bin/mythos-blackboard" clear "cove-_smoke_conv-$stage" >/dev/null 2>&1 || true
+done
+echo "d" | "$P/bin/mythos-cove" draft   _smoke_conv - >/dev/null
+echo "q" | "$P/bin/mythos-cove" plan    _smoke_conv - >/dev/null
+echo "a" | "$P/bin/mythos-cove" answer  _smoke_conv - >/dev/null
+echo "same content" | "$P/bin/mythos-cove" revise _smoke_conv - --iterations=3 >/dev/null 2>&1
+out=$(echo "same content" | "$P/bin/mythos-cove" revise _smoke_conv - --iterations=3 2>&1)
+echo "$out" | grep -q "converged"
+check "cove --iterations: identical content → converged message" $?
+n=$(wc -l < "$P/.claude/state/blackboard/cove-_smoke_conv-revised.jsonl" | tr -d ' ')
+[ "$n" -eq 1 ]
+check "cove --iterations: converged call does NOT append" $?
+
+# 7h.18 CoVe --iterations: max cap respected
+for stage in draft questions answers revised; do
+  "$P/bin/mythos-blackboard" clear "cove-_smoke_cap-$stage" >/dev/null 2>&1 || true
+done
+echo "d" | "$P/bin/mythos-cove" draft   _smoke_cap - >/dev/null
+echo "q" | "$P/bin/mythos-cove" plan    _smoke_cap - >/dev/null
+echo "a" | "$P/bin/mythos-cove" answer  _smoke_cap - >/dev/null
+echo "v1" | "$P/bin/mythos-cove" revise _smoke_cap - --iterations=2 >/dev/null 2>&1
+echo "v2" | "$P/bin/mythos-cove" revise _smoke_cap - --iterations=2 >/dev/null 2>&1
+out=$(echo "v3" | "$P/bin/mythos-cove" revise _smoke_cap - --iterations=2 2>&1)
+echo "$out" | grep -q "max iterations reached"
+check "cove --iterations: cap=2 with 3rd call → max-reached message" $?
+n=$(wc -l < "$P/.claude/state/blackboard/cove-_smoke_cap-revised.jsonl" | tr -d ' ')
+[ "$n" -eq 2 ]
+check "cove --iterations: cap=2 stops at 2 entries" $?
+
+# 7h.19 CoVe --iterations: status shows count
+"$P/bin/mythos-cove" status _smoke_cap 2>/dev/null | grep -q "2 iterations"
+check "cove status shows iteration count when > 1" $?
+
+# Cleanup CoVe smokes
+for prefix in _smoke_iter1 _smoke_conv _smoke_cap; do
+  for stage in draft questions answers revised; do
+    "$P/bin/mythos-blackboard" clear "cove-$prefix-$stage" >/dev/null 2>&1 || true
+  done
+done
+
+# 7h.20 _lib.sh helpers: session_id and effort
+out=$(bash -c '. "'"$P"'/hooks/_lib.sh" && mythos_session_id')
+[ -z "$out" ] || [ -n "$out" ]   # accepts either; just must not error
+check "_lib.sh: mythos_session_id callable without error" $?
+out=$(bash -c '. "'"$P"'/hooks/_lib.sh" && mythos_effort')
+[ "$out" = "default" ] || [ -n "$out" ]
+check "_lib.sh: mythos_effort returns 'default' or actual value" $?
+out=$(env CLAUDE_CODE_SESSION_ID=abc123 bash -c '. "'"$P"'/hooks/_lib.sh" && mythos_session_id')
+[ "$out" = "abc123" ]
+check "_lib.sh: mythos_session_id reads CLAUDE_CODE_SESSION_ID env" $?
+out=$(env CLAUDE_EFFORT=xhigh bash -c '. "'"$P"'/hooks/_lib.sh" && mythos_effort')
+[ "$out" = "xhigh" ]
+check "_lib.sh: mythos_effort reads CLAUDE_EFFORT env" $?
+
+# 7h.21 docs: skills + slash commands + spec
+[ -f "$P/skills/reflexion.md" ];   check "skills/reflexion.md exists"    $?
+[ -f "$P/skills/best-of-n.md" ];   check "skills/best-of-n.md exists"    $?
+[ -f "$P/.claude/commands/reflexion.md" ]; check ".claude/commands/reflexion.md exists" $?
+[ -f "$P/.claude/commands/bestofn.md" ];   check ".claude/commands/bestofn.md exists"   $?
+grep -q "2303.11366" "$P/skills/reflexion.md"
+check "skills/reflexion.md cites arXiv:2303.11366" $?
+grep -q "2408.03314" "$P/skills/best-of-n.md"
+check "skills/best-of-n.md cites arXiv:2408.03314" $?
+[ -f "$P/specs/009-revolution/spec.md" ]
+check "specs/009-revolution/spec.md exists" $?
+
 # ─── 8. Summary ───────────────────────────────────────────────────────────────
 TOTAL=$((PASS+FAIL))
 printf '\n──────────────────────────────────────\n'

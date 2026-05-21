@@ -1,6 +1,6 @@
 {
-  "version": "5.2",
-  "sessionsCompleted": 0,
+  "version": "6.1",
+  "sessionsCompleted": 4,
   "evolutionHistory": [
     {
       "ts": "2026-05-18T09:57:00Z",
@@ -68,6 +68,53 @@
         "Agent Client Protocol (ACP) \u2014 parallel stdio protocol to MCP",
         "Perplexity Agent API as mythos-research backend"
       ]
+    },
+    {
+      "ts": "2026-05-21T07:30:00Z",
+      "from": "6.0",
+      "to": "6.1",
+      "name": "mythosrun: Reasoning Revolution \u2014 Reflexion + Adaptive Best-of-N + Self-Refine",
+      "sota_patterns_adopted": [
+        "reflexion-verbal-rl-episodic-memory (Shinn et al. NeurIPS 2023 \u2014 arXiv:2303.11366)",
+        "adaptive-best-of-n-compute-optimal-routing (Snell et al. 2024 \u2014 arXiv:2408.03314)",
+        "self-refine-iterative-critique-revise (Madaan et al. NeurIPS 2023 \u2014 arXiv:2303.17651, integrated as --iterations N on mythos-cove)",
+        "claude-code-2.x-env-var-helpers (CLAUDE_CODE_SESSION_ID, CLAUDE_EFFORT)"
+      ],
+      "research_methodology": [
+        "3 parallel research subagents (SOTA reasoning / Anthropic Claude Code 2.x / test-time compute)",
+        "convergent recommendations across researchers 1 + 3 \u2014 picked techniques both endorsed",
+        "explicit rejection of unverified-platform-features (mcp_tool/http hook types, terminalSequence)",
+        "explicit rejection of catalog-padding (PRM, Multi-Agent Debate, MCTS \u2014 spike-first)"
+      ],
+      "new_files": [
+        "bin/mythos-reflexion",
+        "bin/mythos-bestofn",
+        "skills/reflexion.md",
+        "skills/best-of-n.md",
+        ".claude/commands/reflexion.md",
+        ".claude/commands/bestofn.md",
+        "specs/009-revolution/spec.md",
+        "specs/009-revolution/review.md"
+      ],
+      "upgraded_files": [
+        "bin/mythos-cove (added --iterations N for Self-Refine integration)",
+        "hooks/_lib.sh (added mythos_session_id / mythos_effort helpers)",
+        "hooks/test-mythos.sh (274 \u2192 309 checks; +35 for v6.1 primitives)",
+        "CLAUDE.md (added v6.1 skill/CLI rows + Claude Code 2.x platform-primitives section)",
+        "CHANGELOG.md (v6.1.0 entry)",
+        "PAPERS.md (Reflexion + Self-Refine + Snell citations added)",
+        "BENCHMARKS.md (309/309 test count)",
+        "specs/registry.json (009 added)",
+        "tasks/lessons.md (subshell-exit lesson added)"
+      ],
+      "rejected_with_reason": [
+        "Process Reward Models (arXiv:2305.20050) \u2014 no training pipeline; zero-shot underperforms by ~15pp",
+        "Multi-Agent Debate (arXiv:2305.14325) \u2014 gain over SC unquantified in available sources",
+        "MCTS upgrade to mythos-tot (arXiv:2406.03816 / 2410.01707) \u2014 spike-first per researcher 3",
+        "Claude Code plugin manifest packaging \u2014 L effort, defer to v6.2",
+        "New Claude Code hook types (mcp_tool/http/args:[]/continueOnBlock/terminalSequence) \u2014 unverified by direct check, defer until confirmed",
+        "Constitutional AI 2025 improvements (arXiv:2504.04918, arXiv:2502.15861) \u2014 address safety, not reasoning quality"
+      ]
     }
   ],
   "calibration": {
@@ -92,8 +139,36 @@
         "n": 0
       },
       {
-        "brier": 0.2542,
-        "n": 5
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
+      },
+      {
+        "brier": null,
+        "n": 0
       },
       {
         "brier": null,

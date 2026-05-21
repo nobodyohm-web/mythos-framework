@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# mythos-bestofn — Adaptive Best-of-N test-time compute state machine.
+#
+# Implements the compute-optimal routing from Snell et al. 2024
+# (arXiv:2408.03314, Aug 2024). Difficulty-aware N selection beats
+# naive uniform-N Best-of-N by ~4x at matched FLOPs. A small model with
+# adaptive TTC can beat a 14x larger model on MATH.
+#
+# Storage: .claude/state/bestofn/<task>.json  (single JSON object per task)
+# {
+#   "task": "...", "question": "...", "difficulty": 1-5,
+#   "recommended_n": 1|2|4|8|16,
+#   "candidates": [ {"id":N,"content":"...","score":0-100,"ts":"..."} ],
+#   "ts": "..."
+# }
+#
+# Subcommands:
+#   init    <task-id> <prompt-file|-> --difficulty=N
+#                                         # record task + difficulty + N
+#   record  <task-id> <candidate-file|-> <score>
+#                                         # append a candidate with verifier score
+#   choose  <task-id>                     # JSON of highest-scoring candidate
+#   status  <task-id>                     # human-readable progress
+#   show    <task-id>                     # full JSON state
+#   clear   <task-id>                     # remove state (testing only)
+#
+# This is a STATE MACHINE. The CALLER samples the N traces (via /fleet,
+# /sc, or repeated invocations with temperature > 0) and scores them
+# (via a verifier prompt). Mythos only stores and selects.
+#
+# Difficulty → N table (from Snell §4.2):
+#   1 (trivial)  → N=1   (single shot)
+#   2 (easy)     → N=2   (Best-of-2)
+#   3 (moderate) → N=4   (default)
+#   4 (hard)     → N=8
+#   5 (expert)   → N=16
+set -uo pipefail
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+. "$PROJECT_DIR/hooks/_lib.sh"
+BON_DIR="$PROJECT_DIR/.claude/state/bestofn"
+mkdir -p "$BON_DIR"
+
+usage() { sed -n '2,35p' "$0" >&2; exit 64; }
+print_help() { sed -n '2,35p' "$0"; }
+
+validate_task() {
+  local t="$1"
+  case "$t" in
+    ""|*[!A-Za-z0-9._-]*) echo "❌ invalid task-id (chars): $t" >&2; exit 64 ;;
+  esac
+  [ "${#t}" -gt 64 ] && { echo "❌ task-id > 64 chars" >&2; exit 64; }
+}
+
+# Validate difficulty and echo recommended N. On invalid input, returns
+# non-zero and echoes nothing — the caller MUST check the return code,
+# because exit inside a $(...) subshell does not propagate to the parent.
+n_from_difficulty() {
+  case "$1" in
+    1) printf 1 ;;
+    2) printf 2 ;;
+    3) printf 4 ;;
+    4) printf 8 ;;
+    5) printf 16 ;;
+    *) return 1 ;;
+  esac
+}
+
+read_payload() {
+  local src="$1"
+  if [ "$src" = "-" ]; then
+    cat
+  else
+    [ ! -f "$src" ] && { echo "❌ no such file: $src" >&2; exit 1; }
+    cat "$src"
+  fi
+}
+
+bon_lock() {
+  if ! mythos_lock_acquire "bestofn-$1" 5000; then
+    echo "❌ could not acquire lock for bestofn-$1 (busy)" >&2; exit 75
+  fi
+  trap "mythos_lock_release \"bestofn-$1\"" EXIT
+}
+bon_unlock() {
+  mythos_lock_release "bestofn-$1"
+  trap - EXIT
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  init)
+    task="${1:-}"; src="${2:-}"
+    [ -z "$task" ] || [ -z "$src" ] && usage
+    validate_task "$task"
+    shift 2 || true
+    difficulty=3
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --difficulty=*) difficulty="${1#--difficulty=}" ;;
+        --difficulty)   shift; difficulty="${1:-3}" ;;
+        *)              echo "❌ unknown flag: $1" >&2; exit 64 ;;
+      esac
+      shift || true
+    done
+    if ! n=$(n_from_difficulty "$difficulty") || [ -z "$n" ]; then
+      echo "❌ difficulty must be 1-5 (got: $difficulty)" >&2; exit 64
+    fi
+    if [ "$src" != "-" ] && [ ! -f "$src" ]; then
+      echo "❌ no such file: $src" >&2; exit 1
+    fi
+    question="$(read_payload "$src")"
+    file="$BON_DIR/$task.json"
+    bon_lock "$task"
+    [ -f "$file" ] && { bon_unlock "$task"; echo "❌ already exists: $task (use clear first)" >&2; exit 1; }
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    python3 - "$file" "$task" "$question" "$difficulty" "$n" "$ts" <<'PY'
+import json, sys
+file, task, question, difficulty, n, ts = sys.argv[1:7]
+state = {
+    "task": task,
+    "question": question,
+    "difficulty": int(difficulty),
+    "recommended_n": int(n),
+    "candidates": [],
+    "ts": ts,
+}
+with open(file, "w") as f:
+    json.dump(state, f, indent=2)
+print(f"✓ bestofn-{task} difficulty={difficulty} recommended_n={n}")
+PY
+    bon_unlock "$task"
+    ;;
+
+  record)
+    task="${1:-}"; src="${2:-}"; score="${3:-}"
+    { [ -z "$task" ] || [ -z "$src" ] || [ -z "$score" ]; } && usage
+    validate_task "$task"
+    case "$score" in
+      ''|*[!0-9]*) echo "❌ score must be integer 0-100" >&2; exit 64 ;;
+    esac
+    if [ "$score" -lt 0 ] || [ "$score" -gt 100 ] 2>/dev/null; then
+      echo "❌ score must be 0-100" >&2; exit 64
+    fi
+    content="$(read_payload "$src")"
+    file="$BON_DIR/$task.json"
+    bon_lock "$task"
+    [ ! -f "$file" ] && { bon_unlock "$task"; echo "❌ no such task: $task (call init first)" >&2; exit 65; }
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    python3 - "$file" "$content" "$score" "$ts" <<'PY'
+import json, sys
+file, content, score, ts = sys.argv[1:5]
+with open(file) as f: state = json.load(f)
+idx = len(state["candidates"]) + 1
+state["candidates"].append({
+    "id": idx,
+    "content": content,
+    "score": int(score),
+    "ts": ts,
+})
+with open(file, "w") as f:
+    json.dump(state, f, indent=2)
+print(f"✓ candidate #{idx} score={score}")
+PY
+    bon_unlock "$task"
+    ;;
+
+  choose)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    file="$BON_DIR/$task.json"
+    [ ! -f "$file" ] && { echo "❌ no such task: $task" >&2; exit 65; }
+    python3 - "$file" <<'PY'
+import json, sys
+file = sys.argv[1]
+with open(file) as f: state = json.load(f)
+cands = state["candidates"]
+if not cands:
+    print(json.dumps({"error": "no candidates recorded"}))
+    sys.exit(65)
+best = max(cands, key=lambda c: c["score"])
+# Tier: D if winner beats runner-up by 10+, else C
+others = [c["score"] for c in cands if c["id"] != best["id"]]
+runner_up = max(others) if others else -1
+margin = best["score"] - runner_up
+tier = "D" if margin >= 10 else "C"
+out = {"id": best["id"], "score": best["score"], "content": best["content"],
+       "margin": margin, "tier": tier, "total_candidates": len(cands)}
+print(json.dumps(out))
+PY
+    ;;
+
+  status)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    file="$BON_DIR/$task.json"
+    [ ! -f "$file" ] && { echo "❌ no such task: $task" >&2; exit 65; }
+    python3 - "$file" <<'PY'
+import json, sys
+file = sys.argv[1]
+with open(file) as f: state = json.load(f)
+print(f"── bestofn status for {state['task']} ──")
+print(f"  difficulty:    {state['difficulty']}")
+print(f"  recommended_n: {state['recommended_n']}")
+print(f"  recorded:      {len(state['candidates'])}")
+if state["candidates"]:
+    scores = sorted([c["score"] for c in state["candidates"]], reverse=True)
+    print(f"  scores:        {scores}")
+PY
+    ;;
+
+  show)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    file="$BON_DIR/$task.json"
+    [ ! -f "$file" ] && { echo "❌ no such task: $task" >&2; exit 65; }
+    cat "$file"
+    ;;
+
+  clear)
+    task="${1:-}"; [ -z "$task" ] && usage
+    validate_task "$task"
+    file="$BON_DIR/$task.json"
+    if [ -f "$file" ]; then
+      rm -f "$file"
+      printf '✓ cleared bestofn-%s\n' "$task"
+    else
+      printf '(no state for %s)\n' "$task"
+    fi
+    ;;
+
+  ""|-h|--help|help) print_help ;;
+  *) echo "❌ unknown subcommand: $cmd" >&2; usage ;;
+esac

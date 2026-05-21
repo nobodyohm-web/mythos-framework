@@ -64,6 +64,8 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 | `skills/free-claude-code-assessment.md` | E/D/C/S verdict on "free claude code" projects + OAuth-proxy safety |
 | `skills/chain-of-verification.md` | Auto-self-checking: draft → verification Qs → fresh-context answers → revise (CoVe, arXiv:2309.11495) |
 | `skills/self-consistency.md` | Sample N reasoning paths, majority-vote final answer (arXiv:2203.11171). +17.9% GSM8K |
+| `skills/reflexion.md` | Cross-attempt episodic memory: verbal RL loop. Failed attempts write reflections; next attempts recall them (arXiv:2303.11366). +22% HumanEval |
+| `skills/best-of-n.md` | Adaptive test-time compute: classify difficulty → route to N parallel samples → score → pick best (Snell, arXiv:2408.03314). 4× efficiency |
 
 ---
 
@@ -83,8 +85,10 @@ You do not guess. You do not over-interpret. When you don't know, you say "I don
 | `bin/mythos-route` | Status/guidance for `claude-code-router` (multi-provider). Read-only — never flips the switch for you. |
 | `bin/mythos-tokens` | Per-session token accounting from Claude Code transcripts. `--json` for CI. |
 | `bin/mythos-fleet` | Multi-worker orchestrator using `claude -p --bare`. Safe defaults (read-only, budget cap, no auto-merge). |
-| `bin/mythos-cove` / `/cove` | Chain-of-Verification state machine: `draft / plan / answer / revise / status / show`. |
+| `bin/mythos-cove` / `/cove` | Chain-of-Verification: `draft / plan / answer / revise [--iterations N] / status / show`. `--iterations` enables Self-Refine (arXiv:2303.17651). |
 | `bin/mythos-sc` / `/sc` | Self-Consistency: `init / record / vote / status / show`. Majority-vote across N traces. |
+| `bin/mythos-reflexion` / `/reflexion` | Reflexion episodic memory: `record / recall / list / clear`. Persists failure reflections for cross-attempt learning (arXiv:2303.11366). |
+| `bin/mythos-bestofn` / `/bestofn` | Adaptive Best-of-N state machine: `init / record / choose / status / show`. Difficulty-routed compute (arXiv:2408.03314). |
 | `/marketplace` | Browse + install curated skills & agents from `registry/`. |
 | `/skill-install <id>` | Install a single skill (or `--tag` for bulk). |
 | `/agent-install <id>` | Install a single subagent (or `--tag` for bulk). |
@@ -145,3 +149,10 @@ Below 70 → explain WHY and what would raise it.
 
 ### Active hook lifecycle
 `SessionStart` → `UserPromptSubmit` (smart-router) → `PreToolUse` (git-guardian + hallucination-guard) → `PostToolUse` (agent-guard + context-guardian + error-recovery; Read/WebFetch → prompt-injection-guard) → `PreCompact` → `SubagentStop` → `Stop` (verify-completion) → `SessionEnd` (auto-learn + self-eval).
+
+### Claude Code 2.x platform primitives `[C]`
+Native primitives Mythos can compose with (verified via Anthropic changelog, not reimplemented):
+- `/goal "<condition>"` — Claude continues across turns until the natural-language condition is met (v2.1.139).
+- `/ultrareview` — parallel multi-agent code review of current diff or a PR. CI form: `claude ultrareview --json`.
+- `/effort xhigh` — additional effort tier for Opus 4.7 extended thinking (v2.1.111). Use for `/critique` and `/deep-evolve`.
+- Env vars in Bash subprocesses: `$CLAUDE_CODE_SESSION_ID`, `$CLAUDE_EFFORT`. Read via `mythos_session_id` / `mythos_effort` from `hooks/_lib.sh`.

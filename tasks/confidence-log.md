@@ -32,6 +32,16 @@
 **Time estimate vs actual:** ~1.5h actual (revert + research + spec + impl + 2 debug rounds + commit). Spec estimate was 2h — under budget.
 **Concerns:** None blocking. End-to-end content generation (fresh-context subagent for CoVe stage 3, temperature sampling for SC traces) remains caller responsibility; the CLIs are state machines, not orchestrators. Documented in skills. Future v6.1: MCTS-LLM upgrade for bin/mythos-tot, /critique wired to auto-invoke CoVe on its draft.
 
+### 2026-05-21 — v6.1 Reasoning Revolution (spec 009)
+**Spec:** specs/009-revolution/spec.md
+**Confidence:** 92/100 🟢
+**Approach:** /mythosrun. 3 parallel research subagents (SOTA reasoning / Anthropic Claude Code 2.x / test-time compute). Convergent recommendations across researchers 1 + 3: Reflexion (arXiv:2303.11366) + Adaptive Best-of-N (arXiv:2408.03314) + Self-Refine via CoVe iteration (arXiv:2303.17651). Explicitly rejected catalog-padding candidates: PRM (no training pipeline), Multi-Agent Debate (unquantified gain vs SC), MCTS (spike-first), plugin manifest packaging (L effort).
+**Changes:** 2 new CLIs, 1 modified CLI (`cove --iterations`), 2 new skills, 2 new slash commands, `_lib.sh` env-var helpers, 35 new self-tests, doc updates (CLAUDE.md / CHANGELOG / PAPERS / BENCHMARKS / registry / 1 new lesson).
+**Verification:** ✅ self-test 309/309 (was 274) | ✅ smoke (reflexion record/recall/list/clear; bestofn init/record/choose/margin→tier; cove --iterations convergence + cap) | ✅ spec-traceability (15/15 ACs) | ✅ CLAUDE.md ≤ 200 (166 lines) | ✅ research-backed (every primitive cites a verified arXiv ID)
+**ACs passed:** 15/15
+**Time estimate vs actual:** ~1h actual (research parallel + spec + impl + 1 subshell-exit fix + tests + docs). Under budget — the convergent research delivered a clean scope on first pass.
+**Concerns:** (1) bestofn untested under concurrent-write stress; (2) cove convergence detection is byte-equal (whitespace-only edits trigger a new iteration); (3) the Claude Code 2.x platform section is tier [C] — researcher-verified via WebFetch but not independently confirmed by me.
+
 ### 2026-05-21 — Ship-readiness review of Mythos repo
 **Spec:** specs/008-repo-ship-readiness/review.md
 **Confidence:** 78/100 🟡

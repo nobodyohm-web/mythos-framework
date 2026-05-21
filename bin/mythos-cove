@@ -14,12 +14,16 @@
 #   cove-<task>-revised    — tier D — final revised answer
 #
 # Subcommands:
-#   draft   <task-id> <file|->          # stage 1: record initial response
-#   plan    <task-id> <file|->          # stage 2: record verification questions
-#   answer  <task-id> <file|->          # stage 3: record fresh-context answers
-#   revise  <task-id> <file|->          # stage 4: record revised final response
-#   status  <task-id>                   # which stages exist
-#   show    <task-id>                   # print all 4 stages in order
+#   draft   <task-id> <file|->                       # stage 1: initial response
+#   plan    <task-id> <file|->                       # stage 2: verification questions
+#   answer  <task-id> <file|->                       # stage 3: fresh-context answers
+#   revise  <task-id> <file|-> [--iterations N]      # stage 4: revised response
+#                                                    # --iterations N enables
+#                                                    # Self-Refine (arXiv:2303.17651):
+#                                                    # caps revisions at N, detects
+#                                                    # convergence (identical content).
+#   status  <task-id>                                # which stages + iteration count
+#   show    <task-id>                                # print all stages incl. iterations
 #
 # This CLI is a STATE MACHINE — it stores artifacts. It does NOT generate
 # questions or answers; the caller (Mythos main / a subagent in a fresh
@@ -32,8 +36,8 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 . "$PROJECT_DIR/hooks/_lib.sh"
 BB="$PROJECT_DIR/bin/mythos-blackboard"
 
-usage() { sed -n '2,28p' "$0" >&2; exit 64; }
-print_help() { sed -n '2,28p' "$0"; }
+usage() { sed -n '2,33p' "$0" >&2; exit 64; }
+print_help() { sed -n '2,33p' "$0"; }
 
 validate_task() {
   local t="$1"
@@ -130,28 +134,103 @@ case "$cmd" in
     task="${1:-}"; src="${2:-}"
     [ -z "$task" ] || [ -z "$src" ] && usage
     validate_task "$task"
+    shift 2 || true
+    # --iterations N — Self-Refine integration (arXiv:2303.17651, Madaan 2023).
+    # Caps the number of revise calls per task and detects convergence
+    # (identical content twice in a row → stop without writing).
+    max_iter=1
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --iterations=*) max_iter="${1#--iterations=}" ;;
+        --iterations)   shift; max_iter="${1:-1}" ;;
+        *)              echo "❌ unknown flag: $1" >&2; exit 64 ;;
+      esac
+      shift || true
+    done
+    case "$max_iter" in
+      ''|*[!0-9]*) echo "❌ --iterations must be positive integer" >&2; exit 64 ;;
+    esac
+    [ "$max_iter" -lt 1 ] && { echo "❌ --iterations must be >= 1" >&2; exit 64; }
+
     stage_exists "$task" answers || { echo "❌ no answers for $task — call 'answer' first" >&2; exit 65; }
-    write_stage "$task" revised D "$src"
+
+    # Count existing revised entries (each successful revise appends one JSONL line).
+    bb_dir="$PROJECT_DIR/.claude/state/blackboard"
+    revised_file="$bb_dir/cove-$task-revised.jsonl"
+    current_iter=0
+    if [ -f "$revised_file" ]; then
+      current_iter=$(wc -l < "$revised_file" | tr -d ' ')
+    fi
+
+    if [ "$current_iter" -ge "$max_iter" ]; then
+      printf '✓ max iterations reached for cove-%s (%d/%d) — not writing\n' \
+        "$task" "$current_iter" "$max_iter" >&2
+      exit 0
+    fi
+
+    new_content="$(read_payload "$src")"
+
+    # Convergence check: if last revised content equals new content, skip write.
+    if [ "$current_iter" -ge 1 ] && command -v jq >/dev/null 2>&1; then
+      prev=$(tail -n 1 "$revised_file" | jq -r '.payload.text // empty')
+      if [ "$prev" = "$new_content" ]; then
+        printf '✓ converged at iteration %d for cove-%s — not writing\n' \
+          "$current_iter" "$task" >&2
+        exit 0
+      fi
+    fi
+
+    # Write the new revision. write_stage handles locking + payload wrapping.
+    # We feed it via a temp file because we already consumed stdin if src was "-".
+    tmp=$(mktemp -t cove-revise.XXXXXX)
+    printf '%s' "$new_content" > "$tmp"
+    write_stage "$task" revised D "$tmp"
+    rm -f "$tmp"
+    next_iter=$((current_iter + 1))
+    printf '  iteration %d/%d\n' "$next_iter" "$max_iter" >&2
     ;;
   status)
     task="${1:-}"; [ -z "$task" ] && usage
     validate_task "$task"
     printf '── CoVe status for %s ──\n' "$task"
-    for stage in draft questions answers revised; do
+    for stage in draft questions answers; do
       if stage_exists "$task" "$stage"; then
         printf '  %-10s ✓\n' "$stage"
       else
         printf '  %-10s ·\n' "$stage"
       fi
     done
+    bb_dir="$PROJECT_DIR/.claude/state/blackboard"
+    revised_file="$bb_dir/cove-$task-revised.jsonl"
+    if [ -f "$revised_file" ]; then
+      n=$(wc -l < "$revised_file" | tr -d ' ')
+      printf '  %-10s ✓ (%d iteration%s)\n' "revised" "$n" "$([ "$n" -gt 1 ] && echo s)"
+    else
+      printf '  %-10s ·\n' "revised"
+    fi
     ;;
   show)
     task="${1:-}"; [ -z "$task" ] && usage
     validate_task "$task"
-    for stage in draft questions answers revised; do
+    for stage in draft questions answers; do
       show_stage "$task" "$stage"
       echo
     done
+    # Render all revised iterations (one per line in the jsonl file).
+    bb_dir="$PROJECT_DIR/.claude/state/blackboard"
+    revised_file="$bb_dir/cove-$task-revised.jsonl"
+    if [ -f "$revised_file" ] && command -v jq >/dev/null 2>&1; then
+      i=0
+      while IFS= read -r line; do
+        i=$((i+1))
+        printf '── cove-%s-revised iteration %d ──\n' "$task" "$i"
+        printf '%s' "$line" | jq -r '.payload.text // (.payload | tostring)'
+        echo
+      done < "$revised_file"
+    else
+      show_stage "$task" revised
+      echo
+    fi
     ;;
   ""|-h|--help|help) print_help ;;
   *) echo "❌ unknown subcommand: $cmd" >&2; usage ;;
