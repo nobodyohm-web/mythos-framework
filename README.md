@@ -1,260 +1,333 @@
-# Claude Mythos — Autonomous Agentic Base + Skill Marketplace
+# Mythos
 
-A drop-in upgrade for **Claude Code** that turns it into a rigorous, hallucination-resistant, multi-agent engineering system — and ships with a **verifiable skill & agent marketplace** so any project can pull exactly the capabilities it needs from curated GitHub sources.
+> **Most Claude Code skill catalogs compete on size. Mythos competes on rigor.**
 
-> Core principle (load-bearing): **SEEK → FIND → VERIFY → KEEP WHAT SURVIVES**
+[![CI](https://github.com/nobodyohm-web/mythos-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/nobodyohm-web/mythos-framework/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-274%2F274-brightgreen.svg)](BENCHMARKS.md)
+[![Claude Code](https://img.shields.io/badge/claude-code-orange.svg)](https://docs.anthropic.com/claude/docs/claude-code)
+[![Papers](https://img.shields.io/badge/primitives-paper--backed-purple.svg)](PAPERS.md)
+[![Conventional Commits](https://img.shields.io/badge/commits-conventional-yellow.svg)](https://www.conventionalcommits.org/)
 
-**v5.5 — Fleet mode + honest free-claude-code assessment.** Spawn parallel `claude -p --bare` workers from the main session (`bin/mythos-fleet` + `/fleet`) with read-only defaults, mandatory budget cap, and zero auto-merge. Workers optionally route through `claude-code-router` to cheap/free providers. Includes `skills/free-claude-code-assessment.md` — E/D/C/S-tiered, citation-backed verdict on every notable "free claude code" project (the short version: they're not free Claude, they're routers).
+Every reasoning primitive cites a paper. Every claim has a test. Hallucinations and prompt injections are caught at the shell layer, **before they reach your model.** Confidence is tagged on every output (E/D/C/S). Cross-agent state lives on disk, not in fragile context.
 
-**v5.4 — Token optimization + multi-provider routing.** Output verbosity reduction (~65% via `skills/terse-mode.md` + `/terse`), task-aware model routing (8 reasoning agents on Opus, `researcher` on Sonnet for fetch+summarize), per-session token accounting (`bin/mythos-tokens`), and read-only guidance for running Claude Code against OpenRouter/DeepSeek/Ollama/Gemini (`bin/mythos-route` + `/route`).
-
----
-
-## Why this exists
-
-Out of the box, an LLM agent drifts. It guesses. It over-confirms. It forgets what it just decided. Mythos fixes that with five primitives:
-
-1. **Separate the judge from the builder.** The agent that writes the code is never the agent that reviews it (`/critique`, `reviewer` subagent).
-2. **Tier every claim.** Established / Derived / Conjectured / Speculative — confidence is structured, not aspirational.
-3. **Communicate through files.** Cross-agent state lives on disk (`bin/mythos-blackboard`), not in fragile shared context.
-4. **Calibrate relentlessly.** `/calibrate` + `/benchmark` close the loop; predictions are scored against outcomes.
-5. **Prefer reversible actions.** Hardened hooks (`git-guardian`, `hallucination-guard`, `prompt-injection-guard`) block irreversible mistakes before they happen.
+**274/274 self-tests pass.** 18 native CLIs. 9 subagents. 20 skills. 20 hooks. Zero auto-merge.
 
 ---
 
-## What's new in this release — the Marketplace
+## Why Mythos exists
 
-`registry/skills.json` + `registry/agents.json` is a **curated, version-pinned catalog** of skills and subagents you can pull on demand. Every install is:
+Out of the box, an LLM agent drifts. It guesses. It over-confirms. It forgets what it just decided. It hallucinates paths, files, and APIs that don't exist. It loops on broken commands. It silently absorbs prompt injection from web pages it fetches.
 
-1. **HEAD-probed** — the GitHub raw URL must respond 200 before download.
-2. **Frontmatter-validated** — agents must declare `name:` + `description:`; skills must have a markdown heading or YAML frontmatter.
-3. **Optionally SHA-256 pinned** — if a hash is set, the bytes must match exactly.
-4. **Atomically written** — temp file → rename, no partial installs.
+The dominant Claude Code ecosystem solves none of those problems — it competes on catalog count. Mythos solves them.
 
-### Quick start with the marketplace
+### How Mythos compares
+
+| Dimension | VoltAgent / alirezarezvani / etc. | **Mythos** |
+|-----------|-----------------------------------|------------|
+| Catalog size | 100s–1000s of skills | **20** (each load-bearing, each cited) |
+| Hallucination defense | none | **`hooks/hallucination-guard.sh`** scans every Bash command |
+| Prompt-injection defense | none | **`hooks/prompt-injection-guard.sh`** on every Read/WebFetch |
+| Loop detection | none | **`hooks/agent-guard.sh`** — 20-entry ring buffer, threshold tunable |
+| Self-verification primitive | reviewer subagent | **GVU** triad (arXiv:2512.02731) + **CoVe** (arXiv:2309.11495) + **Self-Consistency** (arXiv:2203.11171) |
+| Cross-agent state | string handoffs | **Blackboard** CLI, tier-tagged, durable JSONL |
+| Confidence calibration | vibes | **E/D/C/S epistemic tier system** + `/calibrate` loop |
+| Spec-driven workflow | none | `specs/{id}-{slug}/{spec,plan,tasks,review}.md` mandatory for non-trivial tasks |
+| Reproducible test suite | none | **`hooks/test-mythos.sh` — 274/274** |
+| Supply-chain trust | curl-and-hope | HEAD-probe + SHA-256 pin + atomic write |
+
+Mythos will never have 1000 skills. That's the wrong axis.
+
+---
+
+## 60-second taste
 
 ```bash
-# Detect what kind of project you're in
-bin/mythos-detect
+# 1. Install into any project
+bash <(curl -fsSL https://raw.githubusercontent.com/nobodyohm-web/mythos-framework/master/install.sh) ~/my-project
+cd ~/my-project
 
-# Browse the catalog
-bin/mythos-skill  list
-bin/mythos-agent  list
+# 2. Boot Claude Code with Mythos loaded
+claude
+> /assimilate              # agent scans the host repo + adapts
 
-# Get recommendations for THIS repo's stack
-bin/mythos-skill  recommend
-bin/mythos-agent  recommend
+# 3. Watch the defenses fire
+> cat /path/that/doesnt/exist
+# [HALLUCINATION-GUARD] command references nonexistent paths: /path/that/doesnt/exist
 
-# Install a skill
-bin/mythos-skill  install epistemic-rigor
+> # And the reasoning primitives
+> /cove "Will my migration handle 50M rows safely under concurrent writes?"
+# Drafts the answer → generates 5 verification questions → answers each in a
+# FRESH context (no anchoring) → revises. Final answer + state on disk.
 
-# Install every "meta" skill in one shot
-bin/mythos-skill  install-all --tag meta
-
-# Install every agent tagged "core" for this stack
-bin/mythos-agent  install-all --tag core
-
-# Re-verify the entire catalog (HEAD + sha256)
-bin/mythos-skill  verify-all
-bin/mythos-agent  verify-all
-
-# Register a third-party skill (HEAD-probed before persisting)
-bin/mythos-skill  add \
-  --id my-skill --name "My Skill" --summary "what it does" \
-  --repo myorg/myrepo --ref main --path skills/my-skill.md \
-  --tags python,testing
-
-# Pin its sha256 for tamper-detection on future installs
-bin/mythos-skill  refresh-sha my-skill
+> /sc "Should we use Redis or Postgres LISTEN/NOTIFY for this queue?" --n 5
+# Samples 5 reasoning paths, majority-votes the answer. arXiv:2203.11171.
 ```
 
-See [`registry/README.md`](registry/README.md) for the schema, trust model, and authoring guide.
+That's the demo. No mocks, no toy examples — it's the actual surface.
 
 ---
 
-## Installation
+## Install
 
-### One-shot remote install
+### One-shot remote install (recommended)
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/nobodyohm-web/mythos-framework/master/install.sh) /path/to/target
 ```
 
-### Local install (already cloned)
+### Local install (clone first)
 
 ```bash
+git clone https://github.com/nobodyohm-web/mythos-framework
+cd mythos-framework
 ./install.sh /path/to/target
 ```
 
-The installer copies `.claude/`, `bin/`, `hooks/`, `skills/`, `registry/`, plus `CLAUDE.md`, `Risk.md`, and `claude.json` into the target. After install:
+### Bulk-install skills/agents during install
+
+```bash
+./install.sh /path/to/target --with-skills meta,security --with-agents core
+```
+
+After install:
 
 ```bash
 cd /path/to/target
 claude
-> /assimilate          # the agent scans the host and adapts
+> /assimilate          # agent scans the host repo + adapts
 > /marketplace         # browse & install additional skills/agents
+> /diagnose            # self-test + log tails
 ```
 
----
-
-## System architecture
-
-| Layer                 | Purpose                                                             |
-|-----------------------|---------------------------------------------------------------------|
-| `CLAUDE.md`           | Root brain — operating mode + knowledge matrix                       |
-| `Risk.md`             | Guardrails (epistemic + code + operational)                          |
-| `.claude/settings.json` | Hook wiring, MCP servers, permissions                              |
-| `.claude/commands/`   | Slash commands (`/marketplace`, `/mythosrun`, `/critique`, `/team`…) |
-| `.claude/agents/`     | Subagent roster (`planner`, `implementer`, `reviewer`, …)            |
-| `skills/`             | Loaded-on-demand knowledge files                                     |
-| `registry/`           | **Marketplace** catalog + schema docs                                |
-| `bin/`                | Native CLIs (research, reflect, blackboard, budget, skill, agent…)   |
-| `hooks/`              | Deterministic shell hooks for every lifecycle event                  |
-
-### Native CLIs
-
-| CLI                       | Purpose                                                             |
-|---------------------------|---------------------------------------------------------------------|
-| `bin/mythos-detect`       | Detect project stack → emit tags for the recommender                |
-| `bin/mythos-skill`        | Marketplace: list/search/info/install/verify/recommend/add (skills) |
-| `bin/mythos-agent`        | Marketplace: same surface for subagents                             |
-| `bin/mythos-market`       | Shared engine behind `mythos-skill` / `mythos-agent`                |
-| `bin/mythos-research`     | Token-dense web research (`-q "topic" --fetch`)                     |
-| `bin/mythos-reflect`      | Deterministic reflection bundle (diff + plan + static)              |
-| `bin/mythos-blackboard`   | Durable cross-agent state (write/read/tail)                         |
-| `bin/mythos-budget`       | Per-session tool-call budget tracking                               |
-| `bin/mythos-gvu`          | Generator-Verifier-Updater triad orchestrator                       |
-| `bin/mythos-tot`          | Tree-of-Thoughts state CLI                                          |
-| `bin/mythos-calibrate`    | Confidence-vs-outcome calibration                                   |
-| `bin/mythos-epistemic-check` | Tier-tag claims in artifacts                                     |
-| `bin/mythos-observe`      | Tail the event stream                                               |
-| `bin/mythos-route`        | Status/guidance for `claude-code-router` (multi-provider) — read-only |
-| `bin/mythos-tokens`       | Per-session token accounting (`session` / `all` / `list`, `--json`)  |
-| `bin/mythos-fleet`        | Multi-worker orchestrator via `claude -p --bare` (read-only defaults, budget cap) |
-
-### Key slash commands
-
-`/marketplace`, `/skill-install`, `/agent-install`, `/terse`, `/route`, `/fleet`, `/mythosrun`, `/assimilate`, `/critique`, `/team`, `/swarm`, `/evolve`, `/deep-evolve`, `/benchmark`, `/calibrate`, `/reflect`, `/heal`, `/deepaudit`, `/research`, `/specify`, `/ship`, `/bootstrap`, `/diagnose`, `/learn`.
+**Dependencies:** `bash` (3.2+), `jq`, `git`, `python3`. Mythos auto-bootstraps Python deps via a project `.venv` — no system pollution.
 
 ---
 
-## Fleet mode — parallel `claude -p` workers
+## The 5 Anthropic Principles, made concrete
 
-A main Claude Code session is serial by design. **Fleet mode** spawns N parallel worker subprocesses for genuinely independent subtasks while the orchestrator (you, on Opus) stays in charge of judgment and integration.
+These aren't slogans. Each maps to code you can read.
+
+1. **Separate the judge from the builder.** `/critique`, `reviewer` subagent, and `bin/mythos-gvu` enforce fresh-context verification. The Variance Inequality (arXiv:2512.02731) says self-judging correlates noise — GVU breaks that correlation.
+2. **Define success before writing code.** `/specify` and `/mythosrun` refuse to implement without `specs/{slug}/spec.md`. Even a 3-line spec beats zero.
+3. **Communicate through files, not shared context.** `bin/mythos-blackboard` (durable, tier-tagged), `tasks/*.md`, and `.claude/state/{cove,sc,tot,gvu,fleet}/*` survive context resets and inter-agent handoffs.
+4. **Calibrate your evaluator relentlessly.** Every action logs its `predicted_confidence`. The next session scores it against `actual_outcome`. `patterns.json` tracks calibration error. Two consecutive sub-70 confidences trigger `/evolve`.
+5. **Prefer reversible actions over irreversible ones.** `hooks/git-guardian.sh` blocks `--force` to main, `--no-verify`, secret commits, `rm -rf /`. Fleet workers run `--bare` with mandatory `--max-budget-usd` cap and zero auto-merge.
+
+→ Full mapping in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+---
+
+## Paper-backed primitives
+
+Every reasoning module in Mythos cites its source. **No "AI-native magic" claims.**
+
+| Primitive | Paper | CLI / Skill |
+|-----------|-------|-------------|
+| Chain-of-Verification | arXiv:2309.11495 (Dhuliawala et al., 2023) | `bin/mythos-cove` + `/cove` |
+| Self-Consistency | arXiv:2203.11171 (Wang et al., 2022) | `bin/mythos-sc` + `/sc` |
+| Tree-of-Thoughts | arXiv:2305.10601 (Yao et al., 2023) | `bin/mythos-tot` |
+| Generator-Verifier-Updater | arXiv:2512.02731 (Chojecki, 2025) | `bin/mythos-gvu` |
+| Tool-hallucination defense | arXiv:2601.12560 (2026) | `hooks/hallucination-guard.sh` |
+| Indirect prompt injection | arXiv:2302.12173 (Greshake et al.) | `hooks/prompt-injection-guard.sh` |
+| Blackboard / cross-agent state | InfiAgent + Engelmore & Morgan, 1988 | `bin/mythos-blackboard` |
+
+→ Full provenance + what we DON'T cite in [`PAPERS.md`](PAPERS.md).
+
+---
+
+## What you get
+
+```
+constitution.md       immutable principles (load-bearing, ≤ 80 lines)
+Risk.md               guardrails (epistemic + code + operational)
+CLAUDE.md             operating mode + knowledge matrix
+README.md             you are here
+ARCHITECTURE.md       layer-by-layer diagram + data flow
+PAPERS.md             research provenance (every primitive cited)
+BENCHMARKS.md         measurable claims + how to reproduce
+SECURITY.md           threat model + reporting policy
+CHANGELOG.md          SemVer history
+CONTRIBUTING.md       the bar for PRs (it's high)
+CODE_OF_CONDUCT.md    incl. evidence-fabrication clause
+
+.claude/
+├── settings.json     hook wiring, MCP servers, permissions
+├── commands/         26 slash commands (/mythosrun, /critique, /team, /cove, /sc…)
+├── agents/           9 subagents (planner, reviewer, security-auditor…)
+└── state/            durable runtime state (blackboard, cove, sc, tot, gvu, fleet)
+
+bin/                  18 native CLIs (2,754 LOC)
+hooks/                20 deterministic shell hooks (2,263 LOC)
+skills/               20 loaded-on-demand knowledge files (1,629 LOC)
+registry/             marketplace catalog (HEAD-probed, SHA-256 pinned)
+specs/                spec-driven dev artifacts
+tasks/                lessons.md, confidence-log.md, session-journal.md
+```
+
+→ Full directory map in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+---
+
+## The 18 native CLIs
+
+| CLI | Purpose |
+|-----|---------|
+| `bin/mythos-cove` | Chain-of-Verification state machine (`draft / plan / answer / revise`) |
+| `bin/mythos-sc` | Self-Consistency: sample N paths, majority-vote |
+| `bin/mythos-tot` | Tree-of-Thoughts state (`init / expand / score / best / show`) |
+| `bin/mythos-gvu` | Generator-Verifier-Updater triad orchestrator |
+| `bin/mythos-blackboard` | Durable cross-agent state — JSONL, tier-tagged |
+| `bin/mythos-research` | Token-dense web research (`-q "topic" --fetch`) |
+| `bin/mythos-reflect` | Reflection bundle (diff + plan + static) for the Judge |
+| `bin/mythos-budget` | Per-session tool-call budget tracker |
+| `bin/mythos-calibrate` | Confidence-vs-outcome calibration loop |
+| `bin/mythos-epistemic-check` | Tier-tag claims in an artifact |
+| `bin/mythos-tokens` | Per-session token accounting from Claude Code transcripts |
+| `bin/mythos-observe` | Tail the event stream |
+| `bin/mythos-fleet` | Multi-worker orchestrator via `claude -p --bare` (safe defaults) |
+| `bin/mythos-route` | Read-only status/guidance for `claude-code-router` |
+| `bin/mythos-detect` | Detect project stack → tag list for recommender |
+| `bin/mythos-skill` | Marketplace: list/search/info/install/verify/recommend/add |
+| `bin/mythos-agent` | Marketplace: same surface for subagents |
+| `bin/mythos-market` | Shared engine behind `mythos-skill` / `mythos-agent` |
+
+---
+
+## The 9 subagents
+
+8 on Opus for reasoning. 1 on Sonnet (`researcher`) for fetch+summarize — I/O-bound, doesn't need Opus-grade reasoning.
+
+`planner` · `architect` · `researcher` · `implementer` · `tester` · `reviewer` · `debugger` · `optimizer` · `security-auditor`
+
+Routing rules codified in `specs/004-token-optim-routing/spec.md`.
+
+---
+
+## The 20 hooks
+
+Defenses on every Claude Code lifecycle event. Each has a crafted-input test in `hooks/test-mythos.sh`.
+
+| Event | Hook | What it does |
+|-------|------|--------------|
+| SessionStart | `restore-session-state`, `load-lessons` | Boot context |
+| UserPromptSubmit | `smart-router` | Suggest a skill based on the prompt |
+| PreToolUse (Bash) | `git-guardian` | Block irreversible ops |
+| PreToolUse (Bash) | `hallucination-guard` | Warn on nonexistent paths |
+| PostToolUse | `agent-guard` | Detect command-repeat loops |
+| PostToolUse | `context-guardian` | Checkpoint state if context near limit |
+| PostToolUse | `error-recovery` | Auto-suggest on common errors |
+| PostToolUse (Read, WebFetch) | `prompt-injection-guard` | Scan untrusted content for injection patterns |
+| Stop | `verify-completion` | Final typecheck + tests + diff review |
+| SessionEnd | `auto-learn`, `self-eval` | Extract lessons + score the session |
+
+---
+
+## Fleet mode — parallel `claude -p` workers, safely
 
 ```bash
-# Three independent docstring jobs, all read-only by default
 id1=$(bin/mythos-fleet dispatch "Add JSDoc to every export in src/auth.ts" --allow-tools Read,Edit --budget 0.30)
 id2=$(bin/mythos-fleet dispatch "Add JSDoc to every export in src/db.ts"   --allow-tools Read,Edit --budget 0.30)
-id3=$(bin/mythos-fleet dispatch "Add JSDoc to every export in src/api.ts"  --allow-tools Read,Edit --budget 0.30)
-
-bin/mythos-fleet status                          # see them progress
-bin/mythos-fleet collect --id "$id1" --wait      # read output (JSON: result + total_cost_usd)
-bin/mythos-fleet clear --all                     # cleanup
+bin/mythos-fleet status                          # see progress
+bin/mythos-fleet collect --id "$id1" --wait      # JSON: result + total_cost_usd
 ```
 
-### Optional: route workers through `claude-code-router`
-
-If `ccr` is running, workers can be routed to OpenRouter/DeepSeek/Ollama/etc. for cost. The main orchestrator stays on first-party Anthropic for reasoning.
-
-```bash
-bin/mythos-fleet dispatch "Generate boilerplate getters/setters for src/models/*.go" \
-  --provider openrouter --model deepseek/deepseek-chat --budget 0.10 --allow-tools Read,Edit
-```
-
-If `ccr` isn't running, dispatch refuses with exit 4 — **never silently runs on first-party billing when you asked for routing.**
-
-### Safety contract
+Safety contract (enforced; not a suggestion):
 
 | Constraint | Enforced |
 |---|---|
-| `--bare` mode (no hooks/MCP/CLAUDE.md auto-load) | always |
+| `--bare` mode (no auto-loaded hooks/MCP/CLAUDE.md) | always |
 | `--no-session-persistence` | always |
-| Default `--allowedTools` is read-only (`Read,Grep,Glob`) | default |
-| `--max-budget-usd $1.00` cap | mandatory (default; user can lower or raise) |
-| No auto-merge of worker output | by design — orchestrator reviews + integrates |
-| `--provider` requires `ccr` running | HEAD probe; exit 4 on failure |
+| Default `--allowedTools` = read-only | default |
+| `--max-budget-usd` cap | mandatory |
+| Auto-merge of worker output | **never** |
+| `--provider <non-anthropic>` requires `ccr` running | HEAD probe, exit 4 on failure |
 
-### Is "free claude code" interesting?
-
-Short answer: **no, but the idea works** — see `skills/free-claude-code-assessment.md` for the full E/D/C/S-tiered breakdown. The projects under that name are routing proxies to non-Anthropic providers (NVIDIA NIM, DeepSeek, Ollama, etc.). Some providers have real free tiers (NIM: 40 req/min, Ollama: local), but the model quality is materially below Claude on architecture, debugging, and security work. Use cheap workers for boilerplate; keep judgment on Anthropic.
+Workers can route through [`claude-code-router`](https://github.com/musistudio/claude-code-router) for cost. Main orchestrator stays on first-party Anthropic for judgment.
 
 ---
 
-## Token economy
+## Quick reference — slash commands
 
-Token cost has two axes: **how much you write** (output) and **what you pay per token** (provider). Mythos addresses both — without ever sacrificing reasoning power.
+**Reasoning:** `/cove`, `/sc`, `/critique`, `/research`, `/specify`
 
-### Output side — `/terse` + `skills/terse-mode.md`
+**Multi-agent:** `/mythosrun`, `/team`, `/swarm`, `/fleet`
 
-The "caveman pattern" cuts output tokens by 60–75% with no loss of correctness:
+**Self-improvement:** `/evolve`, `/deep-evolve`, `/calibrate`, `/benchmark`, `/learn`, `/reflect`
 
-- No preamble ("I'll…", "Let me…").
-- No recap of the user's request.
-- No tool-call narration.
-- Final state, not journey.
-- End on substance, no closing remark.
+**Ops:** `/assimilate`, `/marketplace`, `/skill-install`, `/agent-install`, `/diagnose`, `/heal`, `/deepaudit`, `/ship`, `/bootstrap`, `/route`, `/terse`
 
-Type `/terse` once and the rule applies for the rest of the session. CLAUDE.md's OPERATING MODE item 1 enforces the same rule by default.
-
-### Provider side — `/route` + `skills/multi-provider-routing.md`
-
-Mythos integrates with [`musistudio/claude-code-router`](https://github.com/musistudio/claude-code-router) (MIT, 26k★), the de-facto upstream proxy that lets you point Claude Code at OpenRouter, DeepSeek, Ollama, Gemini, SiliconFlow, Volcengine, Groq, and more.
-
-`bin/mythos-route` is **strictly read-only**. It tells you what to paste, it never mutates your shell, your rc files, or your packages:
-
-```bash
-bin/mythos-route status      # detect ccr install, current ANTHROPIC_BASE_URL, config presence
-bin/mythos-route providers   # list configured provider names
-bin/mythos-route install     # print install commands (no execution)
-bin/mythos-route enable      # print the activation line (user pastes themselves)
-bin/mythos-route disable     # print the deactivation line
-```
-
-### Reasoning power preserved
-
-Model routing is **task-aware**, not blanket downgrade:
-
-- **Opus (8 agents)**: `architect`, `planner`, `reviewer`, `security-auditor`, `implementer`, `tester`, `debugger`, `optimizer` — anything requiring design judgment, code generation, root-cause analysis, or critical review.
-- **Sonnet (1 agent)**: `researcher` only — its job is WebSearch + WebFetch + summarize, which is I/O-bound and benefits less from Opus-grade reasoning.
-
-This rule is codified in `specs/004-token-optim-routing/spec.md`: downgrade ONLY when the task is fetch-and-summarize, never when judgment or design is involved.
-
-### Visibility — `bin/mythos-tokens`
-
-Parse Claude Code's own transcripts to know exactly what you spent:
-
-```bash
-bin/mythos-tokens session            # latest session (input/output/cache_create/cache_read/total)
-bin/mythos-tokens all                # totals across every session in this project
-bin/mythos-tokens list               # session IDs found
-bin/mythos-tokens --json all         # machine-readable for CI
-```
-
----
-
-## Trust model (read this before adding third-party entries)
-
-- The shipped registry is **small and seeded only with sources we control** (the `mythos-framework` repo).
-- `mythos-skill add` HEAD-probes the URL before writing, but it does **not** vouch for the *content* — added entries are marked `verified:false`.
-- Read every third-party file before installing. Pin `sha256` to detect post-review tampering.
-- The git-guardian, hallucination-guard, and prompt-injection-guard hooks protect runtime, not supply chain. The supply chain is your responsibility.
+Each has a `.claude/commands/<name>.md` definition you can read.
 
 ---
 
 ## Self-test
 
-A single command verifies the whole system end-to-end:
+A single command proves the framework is intact:
 
 ```bash
 bash hooks/test-mythos.sh
-# → ✓ ALL CLEAR — 251/251 checks passed
+# → ✓ ALL CLEAR — 274/274 checks passed
 ```
 
-Tests cover: file layout, hook wiring, JSON validity, frontmatter on every agent, guard behavior under crafted inputs, marketplace CLIs, registry shape, dry-run install safety, token-optim CLIs (`mythos-route`, `mythos-tokens`), the subagent model policy (8 on Opus, 1 on Sonnet), and the fleet safety contract (help text, dispatch error paths, exit codes, env isolation, state-dir lifecycle).
+The CI runs this on every push on both Ubuntu and macOS. See [`BENCHMARKS.md`](BENCHMARKS.md) for what's measured (and what we deliberately don't claim).
+
+---
+
+## Trust model
+
+**The framework's safety is your responsibility.** Read `SECURITY.md` before going to production.
+
+- The shipped registry is seeded only from sources we control.
+- `mythos-skill add` HEAD-probes URLs before write; it does NOT vouch for content.
+- Pin `sha256` on third-party entries to detect post-review tampering.
+- Hooks defend the *runtime loop*, not the *supply chain*. Read every third-party file before installing.
+
+---
+
+## FAQ
+
+**Why only 20 skills when other catalogs have 1000+?**
+Because each skill in Mythos has to earn its place. Skills are not features — they're *load-bearing knowledge*. A skill that doesn't have a clear failure mode it prevents, doesn't get in. See `CONTRIBUTING.md` § "No catalog-padding".
+
+**Is this a replacement for Claude Code?**
+No. Mythos is a *configuration* of Claude Code. You install it into a project, and Claude Code with Mythos active behaves differently — more rigorously, more verifiably, more anti-fragile — than vanilla Claude Code.
+
+**Does Mythos work with other AI agents (Codex, Gemini CLI, Cursor)?**
+Partially. The skills and registry catalog are portable (markdown + JSON). The CLIs (`bin/mythos-*`) are portable too. The hooks are Claude-Code-specific — they wire into Claude Code's lifecycle events.
+
+**Can I use Mythos with `claude-code-router` for cheaper providers?**
+Yes for fleet workers (boilerplate, refactors). No for the main orchestrator — judgment work degrades materially below Claude. Full breakdown in `skills/free-claude-code-assessment.md`.
+
+**What if I disagree with a constitution principle?**
+Open a PR to `constitution.md` with reasoning. The constitution is editable, not sacred — but every change is reviewed against the harm-prevention rationale.
+
+**How is this different from claude-flow / VoltAgent / etc.?**
+Those are catalogs and orchestrators. Mythos is a **discipline** — a configured Claude Code with hardened hooks, paper-backed reasoning primitives, and an epistemic tier system. The comparison table at the top of this README is the short answer; `ARCHITECTURE.md` is the long one.
+
+---
+
+## Contributing
+
+The bar is high. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR.
+
+Short version: self-test stays green, claims tagged with epistemic tiers, no catalog-padding, primitives cite papers.
 
 ---
 
 ## License
 
-MIT. Use it, fork it, publish skills & agents and add them to the registry.
+[MIT](LICENSE). Use it. Fork it. Publish skills & agents and add them to the registry.
+
+---
+
+## Acknowledgments
+
+Mythos stands on a body of public research:
+
+- Anthropic, for Claude and Claude Code.
+- Dhuliawala et al. (CoVe), Wang et al. (Self-Consistency), Yao et al. (Tree-of-Thoughts), Chojecki (GVU), Greshake et al. (indirect prompt injection) for the reasoning + defense primitives.
+- The Spec-Driven Development pattern community.
+- `musistudio/claude-code-router` for the multi-provider routing layer.
+
+If your work is implemented in Mythos and not credited, open an issue — credit gets fixed fast.

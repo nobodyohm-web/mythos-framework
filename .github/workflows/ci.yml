@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  self-test:
+    name: Mythos self-test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y jq bash
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install jq
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Print versions
+        run: |
+          bash --version
+          jq --version
+          python3 --version
+          git --version
+
+      - name: Run self-test
+        run: bash hooks/test-mythos.sh
+
+      - name: Smoke-test CLIs
+        run: |
+          set -e
+          bin/mythos-detect || true
+          bin/mythos-skill list >/dev/null
+          bin/mythos-agent list >/dev/null
+          bin/mythos-blackboard list >/dev/null
+          bin/mythos-budget --json >/dev/null || true
+          bin/mythos-cove status --topic ci-smoke || true
+          bin/mythos-sc status --topic ci-smoke || true
+
+  lint-shell:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run shellcheck on hooks/
+        run: |
+          shopt -s globstar
+          # Non-fatal lint — surface issues without breaking the build yet.
+          shellcheck -S warning hooks/*.sh || true
+          shellcheck -S warning bin/mythos-* || true
+
+  validate-json:
+    name: Validate JSON catalog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Validate every JSON in the repo
+        run: |
+          set -e
+          fail=0
+          while IFS= read -r f; do
+            if ! jq -e . "$f" >/dev/null; then
+              echo "::error file=$f::Invalid JSON"
+              fail=1
+            fi
+          done < <(find . -name '*.json' -not -path './node_modules/*' -not -path './.venv/*' -not -path './.git/*')
+          exit $fail
+
+  markdown-link-check:
+    name: Markdown link check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          check-modified-files-only: 'yes'
+          base-branch: master

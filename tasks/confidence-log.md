@@ -31,3 +31,11 @@
 **ACs passed:** 15/15
 **Time estimate vs actual:** ~1.5h actual (revert + research + spec + impl + 2 debug rounds + commit). Spec estimate was 2h — under budget.
 **Concerns:** None blocking. End-to-end content generation (fresh-context subagent for CoVe stage 3, temperature sampling for SC traces) remains caller responsibility; the CLIs are state machines, not orchestrators. Documented in skills. Future v6.1: MCTS-LLM upgrade for bin/mythos-tot, /critique wired to auto-invoke CoVe on its draft.
+
+### 2026-05-21 — Ship-readiness review of Mythos repo
+**Spec:** specs/008-repo-ship-readiness/review.md
+**Confidence:** 78/100 🟡
+**Approach:** Empirical scan (find/wc/gh) + competitive star comparison + self-test verification. No code changes.
+**Changes:** 1 file created (review.md), 1 log entry.
+**Verification:** ✅ self-test 274/274 | ✅ gh API competitor stars | ✅ traceable to facts | n/a typecheck/tests
+**Concerns:** Verdict on audience reception is a prediction, not a measurement. Rename suggestion is speculative (S-tier).
